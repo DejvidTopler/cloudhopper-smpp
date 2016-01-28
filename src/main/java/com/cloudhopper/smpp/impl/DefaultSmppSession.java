@@ -57,6 +57,17 @@ import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.cloudhopper.smpp.util.SequenceNumber;
 import com.cloudhopper.smpp.util.SmppSessionUtil;
 import com.cloudhopper.smpp.util.SmppUtil;
+<<<<<<< HEAD
+=======
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.handler.timeout.ReadTimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.management.ObjectName;
+>>>>>>> a57225d... window listener, async support
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.nio.channels.ClosedChannelException;
@@ -140,7 +151,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
      * @param channel The channel associated with this session. The channel
      *      needs to already be opened.
      * @param sessionHandler The handler for session events
-     * @param executor The executor that window monitoring and potentially
+     * @param monitorExecutor The executor that window monitoring and potentially
      *      statistics will be periodically executed under.  If null, monitoring
      *      will be disabled.
      */
@@ -159,9 +170,9 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         // different ways to construct the window if monitoring is enabled
         if (monitorExecutor != null && configuration.getWindowMonitorInterval() > 0) {
             // enable send window monitoring, verify if the monitoringInterval has been set
-            this.sendWindow = new Window<Integer,PduRequest,PduResponse>(configuration.getWindowSize(), monitorExecutor, configuration.getWindowMonitorInterval(), this, configuration.getName() + ".Monitor");
+            this.sendWindow = new Window<>(configuration.getWindowSize(), monitorExecutor, configuration.getWindowMonitorInterval(), this, configuration.getName() + ".Monitor");
         } else {
-            this.sendWindow = new Window<Integer,PduRequest,PduResponse>(configuration.getWindowSize());
+            this.sendWindow = new Window<>(configuration.getWindowSize());
         }
         
         // these server-only items are null
@@ -325,6 +336,40 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         this.setBound();
     }
 
+    protected void bindAsync(BaseBind request, BindCallback bindCallback) {
+        this.state.set(STATE_BINDING);
+        try {
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(request, 0, false);
+            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
+                @Override
+                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    BaseBindResp bindResp = (BaseBindResp) windowFuture.getResponse();
+                    if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK) {
+                        DefaultSmppSession.this.close();
+                        bindCallback.onFailure(BindCallback.Reason.NEGATIVE_BIND_RESP, null);
+                    } else {
+                        negotiateServerVersion(bindResp);
+                        setBound();
+                        bindCallback.onBindSucess(DefaultSmppSession.this);
+                    }
+                }
+
+                @Override
+                public void onFailure(WindowFuture windowFuture, Throwable e) {
+                    DefaultSmppSession.this.close();
+                    if (e instanceof ReadTimeoutException)
+                        bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, e);
+                    else {
+                        bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e);
+                    }
+                }
+
+            });
+        } catch (RecoverablePduException | UnrecoverablePduException | SmppTimeoutException | SmppChannelException | InterruptedException e) {
+            this.close();
+            bindCallback.onFailure(BindCallback.Reason.SEND_BIND_REQ_FAILED, e);
+        }
+    }
     protected BaseBindResp bind(BaseBind request, long timeoutInMillis) throws RecoverablePduException, UnrecoverablePduException, SmppBindException, SmppTimeoutException, SmppChannelException, InterruptedException {
         assertValidRequest(request);
         boolean bound = false;
@@ -347,24 +392,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
             //
             // negotiate version in use based on response back from server
             //
-            Tlv scInterfaceVersion = bindResponse.getOptionalParameter(SmppConstants.TAG_SC_INTERFACE_VERSION);
-
-            if (scInterfaceVersion == null) {
-                // this means version 3.3 is in use
-                this.interfaceVersion = SmppConstants.VERSION_3_3;
-            } else {
-                try {
-                    byte tempInterfaceVersion = scInterfaceVersion.getValueAsByte();
-                    if (tempInterfaceVersion >= SmppConstants.VERSION_3_4) {
-                        this.interfaceVersion = SmppConstants.VERSION_3_4;
-                    } else {
-                        this.interfaceVersion = SmppConstants.VERSION_3_3;
-                    }
-                } catch (TlvConvertException e) {
-                    logger.warn("Unable to convert sc_interface_version to a byte value: {}", e.getMessage());
-                    this.interfaceVersion = SmppConstants.VERSION_3_3;
-                }
-            }
+            negotiateServerVersion(bindResponse);
 
             return bindResponse;
         } finally {
@@ -375,6 +403,51 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 // the bind failed, we need to clean up resources
                 try { this.close(); } catch (Exception e) { }
             }
+        }
+    }
+
+    private void negotiateServerVersion(BaseBindResp bindResponse) {
+        Tlv scInterfaceVersion = bindResponse.getOptionalParameter(SmppConstants.TAG_SC_INTERFACE_VERSION);
+
+        if (scInterfaceVersion == null) {
+            // this means version 3.3 is in use
+            this.interfaceVersion = SmppConstants.VERSION_3_3;
+        } else {
+            try {
+                byte tempInterfaceVersion = scInterfaceVersion.getValueAsByte();
+                if (tempInterfaceVersion >= SmppConstants.VERSION_3_4) {
+                    this.interfaceVersion = SmppConstants.VERSION_3_4;
+                } else {
+                    this.interfaceVersion = SmppConstants.VERSION_3_3;
+                }
+            } catch (TlvConvertException e) {
+                logger.warn("Unable to convert sc_interface_version to a byte value: {}", e.getMessage());
+                this.interfaceVersion = SmppConstants.VERSION_3_3;
+            }
+        }
+    }
+
+    @Override
+    public void unbindAsync(long timeoutInMillis, PduSentCallback pduSentCallback) {
+        if(pduSentCallback == null)
+            throw new NullPointerException("Unbind callback can't be null");
+
+        try {
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(new Unbind(), timeoutInMillis, false);
+            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
+                @Override
+                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    pduSentCallback.onSuccess(windowFuture.getRequest(), windowFuture.getResponse());
+                }
+
+                @Override
+                public void onFailure(WindowFuture windowFuture, Throwable e) {
+                    pduSentCallback.onFailure(e);
+                }
+            });
+
+        } catch (Exception e) {
+            pduSentCallback.onFailure(e);
         }
     }
 
@@ -463,7 +536,6 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
     protected PduResponse sendRequestAndGetResponse(PduRequest requestPdu, long timeoutInMillis) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException {
         WindowFuture<Integer,PduRequest,PduResponse> future = sendRequestPdu(requestPdu, timeoutInMillis, true);
         boolean completedWithinTimeout = future.await();
-        
         if (!completedWithinTimeout) {
             // since this is a "synchronous" request and it timed out, we don't
             // want it eating up valuable window space - cancel it before returning exception
@@ -488,6 +560,26 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         }
     }
 
+    @Override
+    public void sendAsyncRequestPdu(PduRequest pdu, long timeoutMillis, PduSentCallback callback) {
+        try {
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, timeoutMillis, false);
+            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
+                @Override
+                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    callback.onSuccess(windowFuture.getRequest(), windowFuture.getResponse());
+                }
+
+                @Override
+                public void onFailure(WindowFuture windowFuture, Throwable e) {
+                    callback.onFailure(e);
+                }
+            });
+        } catch (Throwable e) {
+            callback.onFailure(e);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     public WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException {
@@ -499,7 +591,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        WindowFuture<Integer,PduRequest,PduResponse> future = null;
+        WindowFuture<Integer,PduRequest,PduResponse> future;
         try {
             future = sendWindow.offer(pdu.getSequenceNumber(), pdu, timeoutMillis, configuration.getRequestExpiryTimeout(), synchronous);
         } catch (DuplicateKeyException e) {
@@ -544,8 +636,8 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
      * Asynchronously sends a PDU and does not wait for a response PDU.
      * This method will wait for the PDU to be written to the underlying channel.
      * @param pdu The PDU to send (can be either a response or request)
-     * @throws RecoverablePduEncodingException
-     * @throws UnrecoverablePduEncodingException
+     * @throws RecoverablePduException
+     * @throws UnrecoverablePduException
      * @throws SmppChannelException
      * @throws InterruptedException
      */

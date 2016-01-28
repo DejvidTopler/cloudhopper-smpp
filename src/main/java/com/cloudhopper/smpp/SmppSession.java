@@ -22,6 +22,7 @@ package com.cloudhopper.smpp;
 
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
+import com.cloudhopper.smpp.impl.PduSentCallback;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import com.cloudhopper.smpp.type.SmppTimeoutException;
 import com.cloudhopper.smpp.pdu.EnquireLink;
@@ -74,7 +75,7 @@ public interface SmppSession {
      * or "transmitter".
      * @return The type of bind for this session
      */
-    public SmppBindType getBindType();
+    SmppBindType getBindType();
 
     /**
      * Gets the session type of the local system.  If the local type is ESME,
@@ -83,7 +84,7 @@ public interface SmppSession {
      * 
      * @return The session type of the local system
      */
-    public Type getLocalType();
+    Type getLocalType();
 
     /**
      * Gets the session type of the remote system.  If the remote type is SMSC,
@@ -91,19 +92,19 @@ public interface SmppSession {
      *
      * @return The session type of the remote system
      */
-    public Type getRemoteType();
+    Type getRemoteType();
 
     /**
      * Gets the configuration associated with this session.
      * @return The session configuration
      */
-    public SmppSessionConfiguration getConfiguration();
+    SmppSessionConfiguration getConfiguration();
 
     /**
      * Gets the name of the current state of the session.
      * @return The current state of the session by name such as "CLOSED"
      */
-    public String getStateName();
+    String getStateName();
 
     /**
      * Gets the interface version currently in use between local and remote
@@ -112,7 +113,7 @@ public interface SmppSession {
      * @return The interface version currently in use between local and remote
      *      endpoints.
      */
-    public byte getInterfaceVersion();
+    byte getInterfaceVersion();
 
     /**
      * Returns whether optional parameters are supported with the remote
@@ -120,7 +121,7 @@ public interface SmppSession {
      * this method returns true, otherwise will return false.
      * @return True if optional parameters are supported, otherwise false.
      */
-    public boolean areOptionalParametersSupported();
+    boolean areOptionalParametersSupported();
 
 
     /**
@@ -128,7 +129,7 @@ public interface SmppSession {
      * means the session is connected and a bind is pending.
      * @return True if session is currently in the "OPEN" state, otherwise false.
      */
-    public boolean isOpen();
+    boolean isOpen();
 
     /**
      * Checks if the session is currently in the "BINDING" state.  The "BINDING" state
@@ -137,14 +138,14 @@ public interface SmppSession {
      * is SMSC, then the ESME initiated a bind request, but we have't responded yet.
      * @return True if session is currently in the "BINDING" state, otherwise false.
      */
-    public boolean isBinding();
+    boolean isBinding();
 
     /**
      * Checks if the session is currently in the "BOUND" state.  The "BOUND" state
      * means the session is bound and ready to process requests.
      * @return True if session is currently in the "BOUND" state, otherwise false.
      */
-    public boolean isBound();
+    boolean isBound();
 
     /**
      * Checks if the session is currently in the "UNBINDING" state.  The "UNBINDING" state
@@ -152,27 +153,27 @@ public interface SmppSession {
      * by us or them.
      * @return True if session is currently in the "UNBINDING" state, otherwise false.
      */
-    public boolean isUnbinding();
+    boolean isUnbinding();
 
     /**
      * Checks if the session is currently in the "CLOSED" state.  The "CLOSED" state
      * means the session is unbound and closed (destroyed).
      * @return True if session is currently in the "CLOSED" state, otherwise false.
      */
-    public boolean isClosed();
+    boolean isClosed();
 
     /**
      * Returns the System.currentTimeMillis() value of when this session reached
      * the "BOUND" state.
      * @return The System.currentTimeMillis() value when the session was bound.
      */
-    public long getBoundTime();
+    long getBoundTime();
 
     /**
      * @deprecated
      * @see #getSendWindow()
      */
-    public Window<Integer,PduRequest,PduResponse> getRequestWindow();
+    Window<Integer,PduRequest,PduResponse> getRequestWindow();
     
     /**
      * Gets the underlying request "window" for this session.  A "window" represents
@@ -181,19 +182,19 @@ public interface SmppSession {
      * to be cleared out (most likely for a retry at a later time).
      * @return The request "window"
      */
-    public Window<Integer,PduRequest,PduResponse> getSendWindow();
+    Window<Integer,PduRequest,PduResponse> getSendWindow();
     
     /**
      * Returns true if and only if this session has counters enabled.
      * @return True if the session has counters
      */
-    public boolean hasCounters();
+    boolean hasCounters();
     
     /**
      * Gets the counters this session is tracking.
      * @return The session counters or null if counters are disabled.
      */
-    public SmppSessionCounters getCounters();
+    SmppSessionCounters getCounters();
 
     /**
      * Immediately close the session by closing the underlying socket/channel.
@@ -203,7 +204,7 @@ public interface SmppSession {
      * closing the socket.
      * @see #unbind(long) 
      */
-    public void close();
+    void close();
 
     /**
      * Attempts to "unbind" the session, waiting up to a specified period of
@@ -213,8 +214,10 @@ public interface SmppSession {
      *      response is received from the SMSC.
      * @see #close() 
      */
-    public void unbind(long timeoutMillis);
-    
+    void unbind(long timeoutMillis);
+
+    void unbindAsync(long timeoutInMillis, PduSentCallback pduSentCallback);
+
     /**
      * Destroy a session by ensuring the socket is closed and all
      * resources are cleaned up.  This method should the <b>last</b> method called
@@ -223,7 +226,7 @@ public interface SmppSession {
      * accessed <b>before</b> calling this method.  After calling this method
      * it is not guaranteed that <b>any</b> other method will correctly work.
      */
-    public void destroy();
+    void destroy();
 
     /**
      * Synchronously sends an "enquire_link" request to the remote endpoint and
@@ -249,7 +252,7 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    public EnquireLinkResp enquireLink(EnquireLink request, long timeoutMillis) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
+    EnquireLinkResp enquireLink(EnquireLink request, long timeoutMillis) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
 
     /**
      * Synchronously sends a "submit" request to the remote endpoint and
@@ -275,7 +278,7 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    public SubmitSmResp submit(SubmitSm request, long timeoutMillis) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
+    SubmitSmResp submit(SubmitSm request, long timeoutMillis) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
 
     /**
      * Main underlying method for sending a request PDU to the remote endpoint.
@@ -292,7 +295,7 @@ public interface SmppSession {
      * the correct PDU we were waiting for, so the caller should verify it.
      * For example it is possible that a "Generic_Nack" could be returned by
      * the remote endpoint in response to a PDU.
-     * @param requestPdu The request PDU to send
+     * @param request The request PDU to send
      * @param timeoutMillis If synchronous is true, this represents the time to
      *      wait for a slot to open in the underlying window AND the time to wait
      *      for a response back from the remote endpoint. If synchronous is false,
@@ -318,8 +321,9 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    public WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest request, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
+    WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest request, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
 
+    void sendAsyncRequestPdu(PduRequest pdu, long timeoutMillis, PduSentCallback callback);
     /**
      * Main underlying method for sending a response PDU to the remote endpoint.
      * The PDU will be converted into a sequence of bytes by the underlying transcoder.
@@ -336,5 +340,5 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    public void sendResponsePdu(PduResponse response) throws RecoverablePduException, UnrecoverablePduException, SmppChannelException, InterruptedException;
+    void sendResponsePdu(PduResponse response) throws RecoverablePduException, UnrecoverablePduException, SmppChannelException, InterruptedException;
 }

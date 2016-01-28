@@ -30,6 +30,8 @@ import com.cloudhopper.smpp.SmppSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.pdu.BaseBind;
 import com.cloudhopper.smpp.pdu.BaseBindResp;
+import com.cloudhopper.smpp.pdu.SubmitSm;
+import com.cloudhopper.smpp.pdu.SubmitSmResp;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.type.SmppBindException;
 import com.cloudhopper.smpp.type.SmppChannelException;
@@ -39,6 +41,7 @@ import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.junit.Assert.assertNotNull;
 // my imports
 
 /**
@@ -362,7 +365,7 @@ public class DefaultSmppServerTest {
             Assert.assertEquals("cloudhopper", bindResponse.getSystemId());
 
             Tlv scInterfaceVersion = bindResponse.getOptionalParameter(SmppConstants.TAG_SC_INTERFACE_VERSION);
-            Assert.assertNotNull(scInterfaceVersion);
+            assertNotNull(scInterfaceVersion);
             Assert.assertEquals(SmppConstants.VERSION_3_4, scInterfaceVersion.getValueAsByte());
 
             serverSession0.close();
@@ -423,7 +426,7 @@ public class DefaultSmppServerTest {
             Assert.assertEquals("cloudhopper", bindResponse.getSystemId());
 
             Tlv scInterfaceVersion = bindResponse.getOptionalParameter(SmppConstants.TAG_SC_INTERFACE_VERSION);
-            Assert.assertNotNull(scInterfaceVersion);
+            assertNotNull(scInterfaceVersion);
             Assert.assertEquals(SmppConstants.VERSION_3_4, scInterfaceVersion.getValueAsByte());
 
             serverSession0.close();
@@ -571,6 +574,40 @@ public class DefaultSmppServerTest {
             if (server1 != null) {
                 server1.destroy();
             }
+        }
+    }
+
+    @Test
+    public void serverSessionOK1() throws Exception {
+        DefaultSmppServer server0 = createSmppServer();
+        server0.start();
+
+        try {
+            DefaultSmppClient client0 = new DefaultSmppClient();
+            SmppSessionConfiguration sessionConfig0 = createDefaultConfiguration();
+            // this should actually work
+            SmppSession session0 = client0.bind(sessionConfig0);
+
+            Thread.sleep(100);
+
+            SmppServerSession serverSession0 = serverHandler.sessions.iterator().next();
+            Assert.assertEquals(1, serverHandler.sessions.size());
+            Assert.assertEquals(1, server0.getChannels().size());
+            Assert.assertEquals(true, serverSession0.isBound());
+            Assert.assertEquals(SmppBindType.TRANSCEIVER, serverSession0.getBindType());
+            Assert.assertEquals(SmppSession.Type.SERVER, serverSession0.getLocalType());
+            Assert.assertEquals(SmppSession.Type.CLIENT, serverSession0.getRemoteType());
+
+            SubmitSmResp submitSmResp = session0.submit(new SubmitSm(), 2000);
+            assertNotNull(submitSmResp);
+
+            serverSession0.close();
+            Thread.sleep(200);
+            Assert.assertEquals(0, serverHandler.sessions.size());
+            Assert.assertEquals(0, server0.getChannels().size());
+            Assert.assertEquals(false, serverSession0.isBound());
+        } finally {
+            server0.destroy();
         }
     }
 }

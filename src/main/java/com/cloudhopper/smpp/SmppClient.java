@@ -20,6 +20,7 @@ package com.cloudhopper.smpp;
  * #L%
  */
 
+import com.cloudhopper.smpp.impl.BindCallback;
 import com.cloudhopper.smpp.type.SmppBindException;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import com.cloudhopper.smpp.type.SmppTimeoutException;
@@ -65,4 +66,8 @@ public interface SmppClient {
      */
     public void destroy();
 
+    void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler);
+
+    void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler,
+            BindCallback bindCallback);
 }

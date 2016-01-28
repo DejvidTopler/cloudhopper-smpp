@@ -56,6 +56,10 @@ import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.xml.ws.Holder;
+import java.util.concurrent.CountDownLatch;
+
+import static org.junit.Assert.assertNotNull;
 // my imports
 
 /**
@@ -200,7 +204,7 @@ public class DefaultSmppSessionTest {
             Assert.fail();
         } catch (SmppBindException e) {
             // correct behavior
-            Assert.assertNotNull(e.getBindResponse());
+            assertNotNull(e.getBindResponse());
             Assert.assertEquals(SmppConstants.STATUS_INVSYSID, e.getBindResponse().getCommandStatus());
         } finally {
             SmppSessionUtil.close(session);
@@ -356,7 +360,7 @@ public class DefaultSmppSessionTest {
                     session.sendRequestPdu(el3, 100, true);
                     Assert.fail();
                 } catch (SmppTimeoutException e) {
-                    Assert.assertNotNull(e.getCause());
+                    assertNotNull(e.getCause());
                     Assert.assertEquals(OfferTimeoutException.class, e.getCause().getClass());
                 }
 
@@ -425,7 +429,7 @@ public class DefaultSmppSessionTest {
 
             // we should have received a PDU request, poll for it
             PduRequest pdu0 = sessionHandler.getReceivedPduRequests().poll(2000, TimeUnit.MILLISECONDS);
-            Assert.assertNotNull(pdu0);
+            assertNotNull(pdu0);
             Assert.assertEquals(SmppConstants.CMD_ID_ENQUIRE_LINK, pdu0.getCommandId());
             Assert.assertEquals(0, pdu0.getCommandStatus());
             Assert.assertEquals(16, pdu0.getCommandLength());
@@ -502,7 +506,7 @@ public class DefaultSmppSessionTest {
             // we should have received a PDU response
             PduAsyncResponse asyncpdu0 = sessionHandler.getReceivedExpectedPduResponses().poll(1000, TimeUnit.MILLISECONDS);
             PduResponse pdu0 = asyncpdu0.getResponse();
-            Assert.assertNotNull("Unable to receive expected PDU response -- perhaps it was routed incorrectly?", pdu0);
+            assertNotNull("Unable to receive expected PDU response -- perhaps it was routed incorrectly?", pdu0);
             Assert.assertEquals(SmppConstants.CMD_ID_ENQUIRE_LINK_RESP, pdu0.getCommandId());
             Assert.assertEquals(0, pdu0.getCommandStatus());
             Assert.assertEquals(16, pdu0.getCommandLength());
@@ -534,7 +538,7 @@ public class DefaultSmppSessionTest {
             Throwable t = sessionHandler.getThrowables().poll(2000, TimeUnit.MILLISECONDS);
             logger.debug("polled for exception: {}", t.getMessage());
 
-            Assert.assertNotNull(t);
+            assertNotNull(t);
             Assert.assertTrue(t.getMessage(), (t instanceof UnrecoverablePduException));
         } finally {
             SmppSessionUtil.close(session);
@@ -592,7 +596,7 @@ public class DefaultSmppSessionTest {
             Throwable t = sessionHandler.getThrowables().poll(2000, TimeUnit.MILLISECONDS);
             logger.debug("polled for exception: {}", t.getMessage());
 
-            Assert.assertNotNull(t);
+            assertNotNull(t);
             Assert.assertTrue(t.getMessage(), (t instanceof TerminatingNullByteNotFoundException));
 
             TerminatingNullByteNotFoundException ex = (TerminatingNullByteNotFoundException)t;
@@ -918,7 +922,7 @@ public class DefaultSmppSessionTest {
             Assert.assertEquals(0, sessionHandler.getReceivedPduRequests().size());
             Assert.assertEquals(0, sessionHandler.getReceivedExpectedPduResponses().size());
             PduResponse pdu0 = sessionHandler.getReceivedUnexpectedPduResponses().poll(1000, TimeUnit.MILLISECONDS);
-            Assert.assertNotNull("Unable to receive unexpected PDU response -- perhaps it was routed incorrectly?", pdu0);
+            assertNotNull("Unable to receive unexpected PDU response -- perhaps it was routed incorrectly?", pdu0);
             Assert.assertEquals(SmppConstants.CMD_ID_ENQUIRE_LINK_RESP, pdu0.getCommandId());
             Assert.assertEquals(0, pdu0.getCommandStatus());
             Assert.assertEquals(16, pdu0.getCommandLength());
@@ -953,7 +957,7 @@ public class DefaultSmppSessionTest {
 
             // we should have received a PDU response
             PduResponse pdu0 = sessionHandler.getReceivedUnexpectedPduResponses().poll(1000, TimeUnit.MILLISECONDS);
-            Assert.assertNotNull("Unable to receive unexpected PDU response -- perhaps it was routed incorrectly?", pdu0);
+            assertNotNull("Unable to receive unexpected PDU response -- perhaps it was routed incorrectly?", pdu0);
             Assert.assertEquals(SmppConstants.CMD_ID_ENQUIRE_LINK_RESP, pdu0.getCommandId());
             Assert.assertEquals(0, pdu0.getCommandStatus());
             Assert.assertEquals(16, pdu0.getCommandLength());
@@ -1020,6 +1024,44 @@ public class DefaultSmppSessionTest {
         session.destroy();
         
         Assert.assertEquals(0, session.getSendWindow().getSize());
+    }
+
+    @Test
+    public void testOk() throws Exception {
+        SmppSessionConfiguration configuration = createDefaultConfiguration();
+        registerServerBindProcessor();
+        clearAllServerSessions();
+        final CountDownLatch cdl = new CountDownLatch(1);
+        final Holder<SmppSession> sess = new Holder<>();
+        bootstrap.bindAsync(configuration, null, new BindCallback() {
+            @Override
+            public void onBindSucess(SmppSession smppSession) {
+                sess.value = smppSession;
+                cdl.countDown();
+            }
+
+            @Override
+            public void onFailure(Reason reason, Throwable t) {
+            }
+        });
+
+        cdl.await();
+        SmppSimulatorSessionHandler simulator0 = server.pollNextSession(1000);
+        simulator0.setPduProcessor(null);
+
+        try {
+//            try {
+            // create the requests and response we plan on sending
+            EnquireLink el0 = new EnquireLink();
+            el0.setSequenceNumber(0x7000);
+            EnquireLinkResp el0Resp = el0.createResponse();
+            WindowFuture future0 = sess.value.sendRequestPdu(el0, 3000, true);
+            simulator0.sendPdu(el0Resp);
+            future0.await();
+            assertNotNull(future0.getResponse());
+        } finally {
+            SmppSessionUtil.close(sess.value);
+        }
     }
 
 }
