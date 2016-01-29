@@ -21,7 +21,8 @@ package com.cloudhopper.commons.util.windowing;
  */
 
 import org.jboss.netty.channel.ChannelFutureListener;
-import org.jboss.netty.handler.timeout.ReadTimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWindowFuture.class);
     private final WeakReference<Window> window;
     private final ReentrantLock windowLock;
     private final Condition completedCondition;
@@ -238,7 +240,7 @@ public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
         if (this.done.compareAndSet(false, true)) {
             this.response.set(response);
             this.doneTimestamp.set(doneTimestamp);
-            notifyListeners(null);
+            notifyListeners();
         }
     }
 
@@ -265,7 +267,7 @@ public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
         if (this.done.compareAndSet(false, true)) {
             this.cause.set(t);
             this.doneTimestamp.set(doneTimestamp);
-            notifyListeners(t);
+            notifyListeners();
         }
     }
 
@@ -293,7 +295,7 @@ public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
         // set to done, but don't handle duplicate calls
         if (this.done.compareAndSet(false, true)) {
             this.doneTimestamp.set(doneTimestamp);
-            notifyListeners(new ReadTimeoutException("Request was canceled."));
+            notifyListeners();
         }
     }
 
@@ -352,20 +354,15 @@ public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
             throw new NullPointerException("listener");
         }
 
-        boolean notifyNow = false;
         synchronized (this) {
             if (done.get()) {
-                notifyNow = true;
+                notifyListener(listener);
             } else {
                 if (listeners == null) {
                     listeners = new ArrayList<>(1);
                 }
                 listeners.add(listener);
             }
-        }
-
-        if (notifyNow) {
-            notifyListener(listener, cause.get());
         }
     }
 
@@ -384,25 +381,27 @@ public class DefaultWindowFuture<K,R,P> implements WindowFuture<K,R,P> {
         }
     }
 
-    private void notifyListeners(Throwable e) {
+    private void notifyListeners() {
         if (listeners != null) {
             for (WindowFutureListener l : listeners) {
-                notifyListener(l, e);
+                notifyListener(l);
             }
 
             listeners = null;
         }
     }
 
-    private void notifyListener(WindowFutureListener l, Throwable e) {
+    private void notifyListener(WindowFutureListener l) {
         try {
-            if (response.get() != null) {
+            if(cause.get() != null) {
+                l.onFailure(this, cause.get());
+            } else if(response.get() != null) {
                 l.onComplete(this);
             } else {
-                l.onFailure(this, e);
+                l.onExpire(this);
             }
         } catch (Throwable t) {
-            t.printStackTrace(); //TODO (DT)
+            LOGGER.error("Error notifying lister " + l, t);
         }
     }
 }

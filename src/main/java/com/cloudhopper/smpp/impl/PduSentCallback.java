@@ -12,4 +12,6 @@ public interface PduSentCallback<R extends PduRequest, P extends PduResponse> {
 
     void onFailure(Throwable t);
 
+    void onExpire();
+
 }

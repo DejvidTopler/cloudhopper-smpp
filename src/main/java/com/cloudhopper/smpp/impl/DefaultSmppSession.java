@@ -344,13 +344,14 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 @Override
                 public void onFailure(WindowFuture windowFuture, Throwable e) {
                     DefaultSmppSession.this.close();
-                    if (e instanceof ReadTimeoutException)
-                        bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, e);
-                    else {
-                        bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e);
-                    }
+                    bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e);
                 }
 
+                @Override
+                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    DefaultSmppSession.this.close();
+                    bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"));
+                }
             });
         } catch (RecoverablePduException | UnrecoverablePduException | SmppTimeoutException | SmppChannelException | InterruptedException e) {
             this.close();
@@ -430,6 +431,11 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 @Override
                 public void onFailure(WindowFuture windowFuture, Throwable e) {
                     pduSentCallback.onFailure(e);
+                }
+
+                @Override
+                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    pduSentCallback.onExpire();
                 }
             });
 
@@ -560,6 +566,11 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 @Override
                 public void onFailure(WindowFuture windowFuture, Throwable e) {
                     callback.onFailure(e);
+                }
+
+                @Override
+                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                    callback.onExpire();
                 }
             });
         } catch (Throwable e) {
@@ -703,6 +714,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
             try {
                 // see if a correlating request exists in the window
                 WindowFuture<Integer,PduRequest,PduResponse> future = this.sendWindow.complete(receivedPduSeqNum, responsePdu);
+
                 if (future != null) {
                     logger.trace("Found a future in the window for seqNum [{}]", receivedPduSeqNum);
                     this.countReceiveResponsePdu(responsePdu, future.getOfferToAcceptTime(), future.getAcceptToDoneTime(), (future.getAcceptToDoneTime() / future.getWindowSize()));
