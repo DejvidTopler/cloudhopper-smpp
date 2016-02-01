@@ -17,9 +17,9 @@ public interface BindCallback {
          */
         CONNECT_TIMEOUT,
         /**
-         * Connect failed due unknown or unreachable destination
+         * Connect failed due connection refused
          */
-        CONNECT_UNREACHABLE,
+        CONNECTION_REFUSED,
         /**
          *
          */

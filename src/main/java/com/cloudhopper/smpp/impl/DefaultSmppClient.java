@@ -248,7 +248,7 @@ public class DefaultSmppClient implements SmppClient {
                 if (connectFuture.getCause() instanceof org.jboss.netty.channel.ConnectTimeoutException) {
                     bindCallback.onFailure(BindCallback.Reason.CONNECT_TIMEOUT, connectFuture.getCause());
                 } else {
-                    bindCallback.onFailure(BindCallback.Reason.CONNECT_UNREACHABLE, connectFuture.getCause());
+                    bindCallback.onFailure(BindCallback.Reason.CONNECTION_REFUSED, connectFuture.getCause());
                 }
             } else {
                 // if we get here, then we were able to connect and get a channel
