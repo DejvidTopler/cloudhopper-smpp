@@ -256,7 +256,7 @@ public class DefaultSmppClient implements SmppClient {
                 try {
                     DefaultSmppSession smppSession = createSession(channel, config, sessionHandler);
                     BaseBind bindRequest = createBindRequest(config);
-                    smppSession.bindAsync(bindRequest, bindCallback);
+                    smppSession.bindAsync(bindRequest, bindCallback, config.getBindTimeout());
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
                     bindCallback.onFailure(BindCallback.Reason.SSL_FAILURE, t);
                 } catch (UnrecoverablePduException e) {

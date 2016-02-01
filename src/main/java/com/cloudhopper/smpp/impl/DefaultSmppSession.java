@@ -323,10 +323,10 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         this.setBound();
     }
 
-    protected void bindAsync(BaseBind request, BindCallback bindCallback) {
+    protected void bindAsync(BaseBind request, BindCallback bindCallback, long bindTimeout) {
         this.state.set(STATE_BINDING);
         try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(request, 0, false);
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(request, bindTimeout, false);
             future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
                 @Override
                 public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
