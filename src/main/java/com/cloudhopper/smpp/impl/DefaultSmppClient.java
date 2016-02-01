@@ -48,6 +48,7 @@ import com.cloudhopper.smpp.type.SmppChannelConnectTimeoutException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLEngine;
@@ -155,7 +156,7 @@ public class DefaultSmppClient implements SmppClient {
         this.channels = new DefaultChannelGroup();
         this.executors = executors;
         this.channelFactory = new NioClientSocketChannelFactory(
-                new NioClientBossPool(this.executors, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
+                new NioClientBossPool(Executors.newFixedThreadPool(1), 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
                 new NioWorkerPool(this.executors, expectedSessions, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         // we use the same default pipeline for all new channels - no need for a factory
