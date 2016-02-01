@@ -342,13 +342,13 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 }
 
                 @Override
-                public void onFailure(WindowFuture windowFuture, Throwable e) {
+                public void onFailure(WindowFuture<Integer, PduRequest, PduResponse> windowFuture, Throwable e) {
                     DefaultSmppSession.this.close();
                     bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e);
                 }
 
                 @Override
-                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
                     DefaultSmppSession.this.close();
                     bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"));
                 }
@@ -434,7 +434,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 }
 
                 @Override
-                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
                     pduSentCallback.onExpire();
                 }
             });
@@ -564,12 +564,12 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 }
 
                 @Override
-                public void onFailure(WindowFuture windowFuture, Throwable e) {
+                public void onFailure(WindowFuture<Integer, PduRequest, PduResponse> windowFuture, Throwable e) {
                     callback.onFailure(e);
                 }
 
                 @Override
-                public void onExpire(DefaultWindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
+                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
                     callback.onExpire();
                 }
             });
