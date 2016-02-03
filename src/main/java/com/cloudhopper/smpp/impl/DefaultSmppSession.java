@@ -333,7 +333,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                     BaseBindResp bindResp = (BaseBindResp) windowFuture.getResponse();
                     if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK) {
                         DefaultSmppSession.this.close();
-                        bindCallback.onFailure(BindCallback.Reason.NEGATIVE_BIND_RESP, null);
+                        bindCallback.onFailure(BindCallback.Reason.NEGATIVE_BIND_RESP, null, bindResp);
                     } else {
                         negotiateServerVersion(bindResp);
                         setBound();
@@ -344,18 +344,18 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
                 @Override
                 public void onFailure(WindowFuture<Integer, PduRequest, PduResponse> windowFuture, Throwable e) {
                     DefaultSmppSession.this.close();
-                    bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e);
+                    bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e, null);
                 }
 
                 @Override
                 public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
                     DefaultSmppSession.this.close();
-                    bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"));
+                    bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"), null);
                 }
             });
         } catch (RecoverablePduException | UnrecoverablePduException | SmppTimeoutException | SmppChannelException | InterruptedException e) {
             this.close();
-            bindCallback.onFailure(BindCallback.Reason.SEND_BIND_REQ_FAILED, e);
+            bindCallback.onFailure(BindCallback.Reason.SEND_BIND_REQ_FAILED, e, null);
         }
     }
     protected BaseBindResp bind(BaseBind request, long timeoutInMillis) throws RecoverablePduException, UnrecoverablePduException, SmppBindException, SmppTimeoutException, SmppChannelException, InterruptedException {

@@ -90,7 +90,7 @@ public class DefaultSmppClient implements SmppClient {
         }
 
         @Override
-        public void onFailure(Reason reason, Throwable t) {
+        public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
         }
     };
 
@@ -243,12 +243,12 @@ public class DefaultSmppClient implements SmppClient {
 
         ChannelFutureListener callback = connectFuture -> {
             if (connectFuture.isCancelled()) {
-                bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null);
+                bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null);
             } else if (!connectFuture.isSuccess()) {
                 if (connectFuture.getCause() instanceof org.jboss.netty.channel.ConnectTimeoutException) {
-                    bindCallback.onFailure(BindCallback.Reason.CONNECT_TIMEOUT, connectFuture.getCause());
+                    bindCallback.onFailure(BindCallback.Reason.CONNECT_TIMEOUT, connectFuture.getCause(), null);
                 } else {
-                    bindCallback.onFailure(BindCallback.Reason.CONNECTION_REFUSED, connectFuture.getCause());
+                    bindCallback.onFailure(BindCallback.Reason.CONNECTION_REFUSED, connectFuture.getCause(), null);
                 }
             } else {
                 // if we get here, then we were able to connect and get a channel
@@ -259,11 +259,11 @@ public class DefaultSmppClient implements SmppClient {
                     BaseBind bindRequest = createBindRequest(config);
                     smppSession.bindAsync(bindRequest, bindCallback, config.getBindTimeout());
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
-                    bindCallback.onFailure(BindCallback.Reason.SSL_FAILURE, t);
+                    bindCallback.onFailure(BindCallback.Reason.SSL_FAILURE, t, null);
                 } catch (UnrecoverablePduException e) {
-                    bindCallback.onFailure(BindCallback.Reason.INVALID_BIND_TYPE, e);
+                    bindCallback.onFailure(BindCallback.Reason.INVALID_BIND_TYPE, e, null);
                 } catch (Throwable t) {
-                    bindCallback.onFailure(BindCallback.Reason.UNKNOWN, t);
+                    bindCallback.onFailure(BindCallback.Reason.UNKNOWN, t, null);
                 }
 
             }

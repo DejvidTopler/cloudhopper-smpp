@@ -21,6 +21,7 @@ package com.cloudhopper.smpp.impl;
  */
 
 // third party imports
+import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.util.DaemonExecutors;
 import com.cloudhopper.commons.util.windowing.OfferTimeoutException;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
@@ -29,14 +30,6 @@ import com.cloudhopper.smpp.SmppBindType;
 import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.SmppSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
-import com.cloudhopper.smpp.pdu.BufferHelper;
-import com.cloudhopper.smpp.pdu.EnquireLink;
-import com.cloudhopper.smpp.pdu.EnquireLinkResp;
-import com.cloudhopper.smpp.pdu.Pdu;
-import com.cloudhopper.smpp.pdu.PduRequest;
-import com.cloudhopper.smpp.pdu.PduResponse;
-import com.cloudhopper.smpp.pdu.SubmitSmResp;
-import com.cloudhopper.smpp.pdu.UnbindResp;
 import com.cloudhopper.smpp.simulator.SmppSimulatorBindProcessor;
 import com.cloudhopper.smpp.simulator.SmppSimulatorPduProcessor;
 import com.cloudhopper.smpp.simulator.SmppSimulatorServer;
@@ -1041,7 +1034,7 @@ public class DefaultSmppSessionTest {
             }
 
             @Override
-            public void onFailure(Reason reason, Throwable t) {
+            public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
             }
         });
 
