@@ -22,34 +22,15 @@ package com.cloudhopper.smpp.impl;
 
 import com.cloudhopper.commons.util.PeriodFormatterUtil;
 import com.cloudhopper.commons.util.windowing.*;
+import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.jmx.DefaultSmppSessionMXBean;
-import com.cloudhopper.smpp.SmppBindType;
-import com.cloudhopper.smpp.SmppConstants;
-import com.cloudhopper.smpp.SmppServerSession;
-import com.cloudhopper.smpp.type.SmppChannelException;
-import com.cloudhopper.smpp.SmppSessionConfiguration;
-import com.cloudhopper.smpp.SmppSessionCounters;
-import com.cloudhopper.smpp.SmppSessionHandler;
-import com.cloudhopper.smpp.SmppSessionListener;
-import com.cloudhopper.smpp.type.SmppTimeoutException;
-import com.cloudhopper.smpp.pdu.BaseBind;
-import com.cloudhopper.smpp.pdu.BaseBindResp;
-import com.cloudhopper.smpp.pdu.EnquireLink;
-import com.cloudhopper.smpp.pdu.EnquireLinkResp;
-import com.cloudhopper.smpp.pdu.Pdu;
-import com.cloudhopper.smpp.pdu.PduRequest;
-import com.cloudhopper.smpp.pdu.PduResponse;
-import com.cloudhopper.smpp.pdu.SubmitSm;
-import com.cloudhopper.smpp.pdu.SubmitSmResp;
-import com.cloudhopper.smpp.pdu.Unbind;
+import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.tlv.TlvConvertException;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.transcoder.PduTranscoder;
-import com.cloudhopper.smpp.type.RecoverablePduException;
-import com.cloudhopper.smpp.type.SmppBindException;
-import com.cloudhopper.smpp.type.UnrecoverablePduException;
+import com.cloudhopper.smpp.type.*;
 import com.cloudhopper.smpp.util.SequenceNumber;
 import com.cloudhopper.smpp.util.SmppSessionUtil;
 import com.cloudhopper.smpp.util.SmppUtil;
@@ -325,39 +306,44 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
 
     protected void bindAsync(BaseBind request, BindCallback bindCallback, long bindTimeout) {
         this.state.set(STATE_BINDING);
-        try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(request, bindTimeout, false);
-            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
-                @Override
-                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    BaseBindResp bindResp = (BaseBindResp) windowFuture.getResponse();
-                    if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK) {
-                        DefaultSmppSession.this.close();
-                        bindCallback.onFailure(BindCallback.Reason.NEGATIVE_BIND_RESP, null, bindResp);
-                    } else {
-                        negotiateServerVersion(bindResp);
-                        setBound();
-                        bindCallback.onBindSucess(DefaultSmppSession.this);
-                    }
-                }
-
-                @Override
-                public void onFailure(WindowFuture<Integer, PduRequest, PduResponse> windowFuture, Throwable e) {
+        sendAsyncRequestPdu(request, bindTimeout, new PduSentCallback<BaseBindResp>() {
+            @Override
+            public void onSuccess(BaseBindResp bindResp) {
+                if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK) {
                     DefaultSmppSession.this.close();
-                    bindCallback.onFailure(BindCallback.Reason.READ_ERROR, e, null);
+                    bindCallback.onFailure(BindCallback.Reason.NEGATIVE_BIND_RESP, null, bindResp);
+                } else {
+                    negotiateServerVersion(bindResp);
+                    setBound();
+                    bindCallback.onBindSucess(DefaultSmppSession.this);
                 }
+            }
 
-                @Override
-                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    DefaultSmppSession.this.close();
-                    bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"), null);
-                }
-            });
-        } catch (RecoverablePduException | UnrecoverablePduException | SmppTimeoutException | SmppChannelException | InterruptedException e) {
-            this.close();
-            bindCallback.onFailure(BindCallback.Reason.SEND_BIND_REQ_FAILED, e, null);
-        }
+            @Override
+            public void onFailure(Throwable t) {
+                DefaultSmppSession.this.close();
+
+                if (t instanceof RecoverablePduException || t instanceof UnrecoverablePduException || t instanceof SmppTimeoutException ||
+                        t instanceof SmppChannelException || t instanceof InterruptedException)
+                    bindCallback.onFailure(BindCallback.Reason.SEND_BIND_REQ_FAILED, t, null);
+                else
+                    bindCallback.onFailure(BindCallback.Reason.READ_ERROR, t, null);
+            }
+
+            @Override
+            public void onExpire() {
+                DefaultSmppSession.this.close();
+                bindCallback.onFailure(BindCallback.Reason.READ_TIMEOUT, new ReadTimeoutException("Request expire in window"), null);
+            }
+
+            @Override
+            public void onCancel() {
+                DefaultSmppSession.this.close();
+                bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null);
+            }
+        });
     }
+
     protected BaseBindResp bind(BaseBind request, long timeoutInMillis) throws RecoverablePduException, UnrecoverablePduException, SmppBindException, SmppTimeoutException, SmppChannelException, InterruptedException {
         assertValidRequest(request);
         boolean bound = false;
@@ -420,28 +406,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         if(pduSentCallback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
-        try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(new Unbind(), timeoutInMillis, false);
-            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
-                @Override
-                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    pduSentCallback.onSuccess(windowFuture.getRequest(), windowFuture.getResponse());
-                }
-
-                @Override
-                public void onFailure(WindowFuture windowFuture, Throwable e) {
-                    pduSentCallback.onFailure(e);
-                }
-
-                @Override
-                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    pduSentCallback.onExpire();
-                }
-            });
-
-        } catch (Exception e) {
-            pduSentCallback.onFailure(e);
-        }
+        sendAsyncRequestPdu(new Unbind(), timeoutInMillis, pduSentCallback);
     }
 
     @Override
@@ -557,22 +522,7 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
     public void sendAsyncRequestPdu(PduRequest pdu, long timeoutMillis, PduSentCallback callback) {
         try {
             WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, timeoutMillis, false);
-            future.addListener(new WindowFutureListener<Integer, PduRequest, PduResponse>() {
-                @Override
-                public void onComplete(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    callback.onSuccess(windowFuture.getRequest(), windowFuture.getResponse());
-                }
-
-                @Override
-                public void onFailure(WindowFuture<Integer, PduRequest, PduResponse> windowFuture, Throwable e) {
-                    callback.onFailure(e);
-                }
-
-                @Override
-                public void onExpire(WindowFuture<Integer, PduRequest, PduResponse> windowFuture) {
-                    callback.onExpire();
-                }
-            });
+            future.addListener(new DelegatingWindowFutureListener<>(callback));
         } catch (Throwable e) {
             callback.onFailure(e);
         }
