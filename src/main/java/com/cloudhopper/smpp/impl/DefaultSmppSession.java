@@ -304,9 +304,9 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         this.setBound();
     }
 
-    protected void bindAsync(BaseBind request, BindCallback bindCallback, long bindTimeout) {
+    protected void bindAsync(BaseBind request, BindCallback bindCallback) {
         this.state.set(STATE_BINDING);
-        sendAsyncRequestPdu(request, bindTimeout, new PduSentCallback<BaseBindResp>() {
+        sendAsyncRequestPdu(request, new PduSentCallback<BaseBindResp>() {
             @Override
             public void onSuccess(BaseBindResp bindResp) {
                 if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK) {
@@ -402,11 +402,11 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
     }
 
     @Override
-    public void unbindAsync(long timeoutInMillis, PduSentCallback pduSentCallback) {
+    public void unbindAsync(PduSentCallback pduSentCallback) {
         if(pduSentCallback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
-        sendAsyncRequestPdu(new Unbind(), timeoutInMillis, pduSentCallback);
+        sendAsyncRequestPdu(new Unbind(), pduSentCallback);
     }
 
     @Override
@@ -519,9 +519,9 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
     }
 
     @Override
-    public void sendAsyncRequestPdu(PduRequest pdu, long timeoutMillis, PduSentCallback callback) {
+    public void sendAsyncRequestPdu(PduRequest pdu, PduSentCallback callback) {
         try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, timeoutMillis, false);
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, 0, false);
             future.addListener(new DelegatingWindowFutureListener<>(callback));
         } catch (Throwable e) {
             callback.onFailure(e);

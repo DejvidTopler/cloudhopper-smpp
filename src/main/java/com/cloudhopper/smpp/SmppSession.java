@@ -216,7 +216,7 @@ public interface SmppSession {
      */
     void unbind(long timeoutMillis);
 
-    void unbindAsync(long timeoutInMillis, PduSentCallback pduSentCallback);
+    void unbindAsync(PduSentCallback pduSentCallback);
 
     /**
      * Destroy a session by ensuring the socket is closed and all
@@ -323,7 +323,7 @@ public interface SmppSession {
      */
     WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest request, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
 
-    void sendAsyncRequestPdu(PduRequest pdu, long timeoutMillis, PduSentCallback callback);
+    void sendAsyncRequestPdu(PduRequest pdu, PduSentCallback callback);
     /**
      * Main underlying method for sending a response PDU to the remote endpoint.
      * The PDU will be converted into a sequence of bytes by the underlying transcoder.
