@@ -1,6 +1,5 @@
 package com.cloudhopper.smpp.impl;
 
-import com.cloudhopper.smpp.SmppSession;
 import com.cloudhopper.smpp.pdu.BaseBindResp;
 
 /**
@@ -28,7 +27,7 @@ public interface BindCallback {
 
     }
 
-    void onBindSucess(SmppSession smppSession);
+    void onBindSucess(DefaultAsyncSmppSession smppSession);
 
     void onFailure(Reason reason, Throwable t, BaseBindResp response);
 
