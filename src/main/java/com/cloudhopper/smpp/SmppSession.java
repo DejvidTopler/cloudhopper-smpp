@@ -23,6 +23,7 @@ package com.cloudhopper.smpp;
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.impl.PduSentCallback;
+import com.cloudhopper.smpp.impl.UnbindCallback;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import com.cloudhopper.smpp.type.SmppTimeoutException;
 import com.cloudhopper.smpp.pdu.EnquireLink;
@@ -216,7 +217,7 @@ public interface SmppSession {
      */
     void unbind(long timeoutMillis);
 
-    void unbindAsync(PduSentCallback pduSentCallback);
+    void unbindAsync(UnbindCallback callback);
 
     /**
      * Destroy a session by ensuring the socket is closed and all

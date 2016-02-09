@@ -37,6 +37,7 @@ import com.cloudhopper.smpp.util.SmppUtil;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -402,11 +403,44 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
     }
 
     @Override
-    public void unbindAsync(PduSentCallback pduSentCallback) {
-        if(pduSentCallback == null)
+    public void unbindAsync(UnbindCallback callback) {
+        if(callback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
-        sendAsyncRequestPdu(new Unbind(), pduSentCallback);
+        if (this.channel.isConnected())
+            this.state.set(STATE_UNBINDING);
+
+        sendAsyncRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
+            @Override
+            public void onSuccess(UnbindResp response) {
+                close(future -> callback.onFinished());
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                close(future -> callback.onFinished());
+            }
+
+            @Override
+            public void onExpire() {
+                close(future -> callback.onFinished());
+            }
+
+            @Override
+            public void onCancel() {
+                close(future -> callback.onFinished());
+            }
+        });
+    }
+
+    private void close(ChannelFutureListener listener){
+        ChannelFuture channelFuture = this.channel.close();
+        ChannelFutureListener unbindListener = future -> {
+            DefaultSmppSession.this.state.set(STATE_CLOSED);
+            listener.operationComplete(future);
+        };
+
+        channelFuture.addListener(unbindListener);
     }
 
     @Override
