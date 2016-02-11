@@ -18,6 +18,11 @@ public class EventDispatcherImpl implements EventDispatcher {
     }
 
     @Override
+    public boolean hasHandlers(Class<? extends SessionEvent> key){
+        return syncProcessor.hasHandlers(key) || asyncProcessor.hasHandlers(key);
+    }
+
+    @Override
     public int getQueueSize() {
         return asyncProcessor.getQueueSize();
     }

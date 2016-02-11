@@ -9,6 +9,8 @@ public interface EventDispatcher {
 
     void dispatch(SessionEvent sessionEvent, AsyncSmppSession session);
 
+    boolean hasHandlers(Class<? extends SessionEvent> key);
+
     int getQueueSize();
 
     void addHandler(Class<? extends SessionEvent> sessionEvent, AsyncSmppSession session, EventHandler eventHandler);

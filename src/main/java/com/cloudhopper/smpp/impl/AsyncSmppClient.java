@@ -131,11 +131,11 @@ public class AsyncSmppClient {
         return bind;
     }
 
-    public void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler) {
-        bindAsync(config, sessionHandler, DEFULAT_BIND_CALLBACK);
+    public void bindAsync(SmppSessionConfiguration config) {
+        bindAsync(config, DEFULAT_BIND_CALLBACK);
     }
 
-    public void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler,
+    public void bindAsync(SmppSessionConfiguration config,
             BindCallback bindCallback) {
         if (bindCallback == null) {
             throw new NullPointerException("AsyncBindCallback can not be null.");

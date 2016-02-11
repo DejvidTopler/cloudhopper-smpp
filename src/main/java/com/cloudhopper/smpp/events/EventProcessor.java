@@ -53,6 +53,10 @@ public class EventProcessor {
         }
     }
 
+    public boolean hasHandlers(Class<? extends SessionEvent> key){
+        return handlers.containsKey(key);
+    }
+
     public void addHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler) {
         handlers.computeIfAbsent(sessionEvent, aClass -> new CopyOnWriteArrayList<>()).add(eventHandler);
     }

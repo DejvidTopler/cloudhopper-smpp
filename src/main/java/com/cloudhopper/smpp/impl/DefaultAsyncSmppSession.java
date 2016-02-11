@@ -29,6 +29,7 @@ import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.SmppSession.*;
 import com.cloudhopper.smpp.events.EventDispatcher;
 import com.cloudhopper.smpp.events.PduRequestReceivedEvent;
+import com.cloudhopper.smpp.events.PduRequestSentEvent;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.tlv.TlvConvertException;
@@ -378,17 +379,12 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         } catch (OfferTimeoutException e) {
             throw new SmppTimeoutException(e.getMessage(), e);
         }
-        
-        if(this.sessionHandler instanceof SmppSessionListener) {
-            if(!((SmppSessionListener)this.sessionHandler).firePduDispatch(pdu)) {
-                logger.info("dispatched request PDU discarded: {}", pdu);
-                future.cancel(); //@todo probably throwing exception here is better solution?
-                return future;
-            }
+
+        if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
+            eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
         }
 
-        // write the pdu out & wait timeout amount of time
-	ChannelFuture channelFuture = this.channel.write(buffer).await();
+    	ChannelFuture channelFuture = this.channel.write(buffer).await();
 
         // check if the write was a success
         if (!channelFuture.isSuccess()) {
@@ -410,7 +406,11 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
         }
-        
+
+        if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
+            eventDispatcher.dispatch(new PduResponseSentEvent(pdu), this);
+        }
+
         if(this.sessionHandler instanceof SmppSessionListener) {
             if(!((SmppSessionListener)this.sessionHandler).firePduDispatch(pdu)) {
                 logger.info("dispatched response PDU discarded: {}", pdu);
