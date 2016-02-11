@@ -12,9 +12,10 @@ public class EventDispatcherImpl implements EventDispatcher {
     private final EventProcessor syncProcessor = new EventProcessor(0);
 
     @Override
-    public void dispatch(SessionEvent sessionEvent, AsyncSmppSession session) {
+    public <E extends SessionEvent> E dispatch(E sessionEvent, AsyncSmppSession session) {
         asyncProcessor.dispatch(sessionEvent, session);
         syncProcessor.dispatch(sessionEvent, session);
+        return sessionEvent;
     }
 
     @Override

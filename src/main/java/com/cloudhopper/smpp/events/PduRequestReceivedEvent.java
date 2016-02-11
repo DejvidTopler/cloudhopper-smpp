@@ -1,6 +1,5 @@
 package com.cloudhopper.smpp.events;
 
-import com.cloudhopper.smpp.pdu.Pdu;
 import com.cloudhopper.smpp.pdu.PduRequest;
 
 /**

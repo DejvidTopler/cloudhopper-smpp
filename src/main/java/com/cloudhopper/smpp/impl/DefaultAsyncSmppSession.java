@@ -27,9 +27,7 @@ import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.SmppSession.*;
-import com.cloudhopper.smpp.events.EventDispatcher;
-import com.cloudhopper.smpp.events.PduRequestReceivedEvent;
-import com.cloudhopper.smpp.events.PduRequestSentEvent;
+import com.cloudhopper.smpp.events.*;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.tlv.TlvConvertException;
@@ -238,9 +236,9 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         return this.counters;
     }
 
-    protected void bindAsync(BaseBind request, BindCallback bindCallback) {
+    protected void bind(BaseBind request, BindCallback bindCallback) {
         this.state.set(STATE_BINDING);
-        sendAsyncRequestPdu(request, new PduSentCallback<BaseBindResp>() {
+        sendRequestPdu(request, new PduSentCallback<BaseBindResp>() {
             @Override
             public void onSuccess(BaseBindResp bindResp) {
                 if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK)
@@ -305,7 +303,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         if (this.channel.isConnected())
             this.state.set(STATE_UNBINDING);
 
-        sendAsyncRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
+        sendRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
             @Override
             public void onSuccess(UnbindResp response) {
                 close(future -> callback.onFinished());
@@ -353,16 +351,16 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
     }
 
     @Override
-    public void sendAsyncRequestPdu(PduRequest pdu, PduSentCallback callback) {
+    public void sendRequestPdu(PduRequest pdu, PduSentCallback callback) {
         try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, 0, false);
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu);
             future.addListener(new DelegatingWindowFutureListener<>(callback));
         } catch (Throwable e) {
             callback.onFailure(e);
         }
     }
 
-    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException {
+    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu) {
         // assign the next PDU sequence # if its not yet assigned
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
@@ -371,14 +369,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        WindowFuture<Integer,PduRequest,PduResponse> future;
-        try {
-            future = sendWindow.offer(pdu.getSequenceNumber(), pdu, timeoutMillis, configuration.getRequestExpiryTimeout(), synchronous);
-        } catch (DuplicateKeyException e) {
-            throw new UnrecoverablePduException(e.getMessage(), e);
-        } catch (OfferTimeoutException e) {
-            throw new SmppTimeoutException(e.getMessage(), e);
-        }
+        WindowFuture<Integer,PduRequest,PduResponse> future = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, configuration.getRequestExpiryTimeout(), false);
 
         if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
             eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
@@ -407,99 +398,70 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
             pdu.setSequenceNumber(this.sequenceNumber.next());
         }
 
-        if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
-            eventDispatcher.dispatch(new PduResponseSentEvent(pdu), this);
-        }
-
-        if(this.sessionHandler instanceof SmppSessionListener) {
-            if(!((SmppSessionListener)this.sessionHandler).firePduDispatch(pdu)) {
+        if(eventDispatcher.hasHandlers(BeforePduResponseSentEvent.class)) {
+            BeforePduResponseSentEvent event = new BeforePduResponseSentEvent(pdu);
+            eventDispatcher.dispatch(event, this);
+            if(event.isStopExecution()) {
                 logger.info("dispatched response PDU discarded: {}", pdu);
                 return;
             }
         }
 
-        // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        // we need to log the PDU after encoding since some things only happen
-        // during the encoding process such as looking up the result message
-        if (configuration.getLoggingOptions().isLogPduEnabled()) {
-            logger.info("send PDU: {}", pdu);
-        }
-
         // write the pdu out & wait timeout amount of time
-        ChannelFuture channelFuture = this.channel.write(buffer).await();
+        ChannelFuture channelFuture = this.channel.write(buffer);
 
-        // check if the write was a success
-        if (!channelFuture.isSuccess()) {
-            // the write failed, make sure to throw an exception
-            throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
+        if(eventDispatcher.hasHandlers(PduResponseSentEvent.class) || eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
+            channelFuture.addListener(future -> {
+                if (channelFuture.isSuccess()) {
+                    if(eventDispatcher.hasHandlers(PduResponseSentEvent.class)) {
+                        eventDispatcher.dispatch(new PduResponseSentEvent(pdu), DefaultAsyncSmppSession.this);
+                    }
+                } else {
+                    if(eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
+                        eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, future.getCause()), DefaultAsyncSmppSession.this);
+                    }
+                }
+            });
         }
     }
 
     @SuppressWarnings("unchecked")
     @Override
     public void firePduReceived(Pdu pdu) {
-        if (configuration.getLoggingOptions().isLogPduEnabled()) {
-            logger.info("received PDU: {}", pdu);
-        }
-
-
-        if(this.sessionHandler instanceof SmppSessionListener) {
-            if(!((SmppSessionListener)this.sessionHandler).firePduReceived(pdu)){
-                logger.info("recieved PDU discarded: {}", pdu);
+        if(eventDispatcher.hasHandlers(PduReceivedEvent.class)) {
+            PduReceivedEvent event = eventDispatcher.dispatch(new PduReceivedEvent(pdu), this);
+            if(event.isStopExecution())
                 return;
-            }
         }
 
         if (pdu instanceof PduRequest) {
-            // process this request and allow the handler to return a result
-            PduRequest requestPdu = (PduRequest)pdu;
-
-            eventDispatcher.dispatch(new PduRequestReceivedEvent(requestPdu), this);
-
+            if(eventDispatcher.hasHandlers(PduRequestReceivedEvent.class))
+                eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest)pdu), this);
         } else if(pdu instanceof PduResponse) {
-
-        } else {
-        }
-            // this is a response -- we need to check if its "expected" or "unexpected"
-            PduResponse responsePdu = (PduResponse)pdu;
-            int receivedPduSeqNum = pdu.getSequenceNumber();
-            
+            PduResponse responsePdu = (PduResponse) pdu;
+            WindowFuture<Integer,PduRequest,PduResponse> future;
             try {
-                // see if a correlating request exists in the window
-                WindowFuture<Integer,PduRequest,PduResponse> future = this.sendWindow.complete(receivedPduSeqNum, responsePdu);
-
-                if (future != null) {
-                    logger.trace("Found a future in the window for seqNum [{}]", receivedPduSeqNum);
-                    this.countReceiveResponsePdu(responsePdu, future.getOfferToAcceptTime(), future.getAcceptToDoneTime(), (future.getAcceptToDoneTime() / future.getWindowSize()));
-                    
-                    // if this isn't null, we found a match to a request
-                    int callerStateHint = future.getCallerStateHint();
-                    //logger.trace("IsCallerWaiting? " + future.isCallerWaiting() + " callerStateHint=" + callerStateHint);
-                    if (callerStateHint == WindowFuture.CALLER_WAITING) {
-                        logger.trace("Caller waiting for request: {}", future.getRequest()); 
-                        // if a caller is waiting, nothing extra needs done as calling thread will handle the response
-                        return;
-                    } else if (callerStateHint == WindowFuture.CALLER_NOT_WAITING) {
-                        logger.trace("Caller not waiting for request: {}", future.getRequest()); 
-                        // this was an "expected" response - wrap it into an async response
-                        this.sessionHandler.fireExpectedPduResponseReceived(new DefaultPduAsyncResponse(future));
-                        return;
-                    } else {
-                        logger.trace("Caller timed out waiting for request: {}", future.getRequest());
-                        // we send the request, but caller gave up on it awhile ago
-                        this.sessionHandler.fireUnexpectedPduResponseReceived(responsePdu);
-                    }
-                } else {
-                    this.countReceiveResponsePdu(responsePdu, 0, 0, 0);
-                    
-                    // original request either expired OR was completely unexpected
-                    this.sessionHandler.fireUnexpectedPduResponseReceived(responsePdu);
-                }
+                future = this.sendWindow.complete(responsePdu.getSequenceNumber(), responsePdu);
             } catch (InterruptedException e) {
-                logger.warn("Interrupted while attempting to process response PDU and match it to a request via requesWindow: ", e);
-                // do nothing, continue processing
+                logger.error("Nio thread is interrupted while completing window, pduResponse is dropped " + responsePdu, e);
+                return;
+            }
+
+            if(future != null) {
+                this.countReceiveResponsePdu(responsePdu, future.getOfferToAcceptTime(), future.getAcceptToDoneTime(), (future.getAcceptToDoneTime() / future.getWindowSize()));
+
+                if(!eventDispatcher.hasHandlers(PduResponseReceivedEvent.class))
+                    return;
+
+                eventDispatcher.dispatch(new PduResponseReceivedEvent(future.getRequest(), (PduResponse) pdu), this);
+
+            } else {
+                if(!eventDispatcher.hasHandlers(UnexpectedPduResponseReceivedEvent.class))
+                    return;
+
+                eventDispatcher.dispatch(new UnexpectedPduResponseReceivedEvent((PduResponse) pdu), this);
             }
         }
     }

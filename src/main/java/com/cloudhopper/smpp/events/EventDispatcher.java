@@ -7,7 +7,7 @@ import com.cloudhopper.smpp.impl.AsyncSmppSession;
  */
 public interface EventDispatcher {
 
-    void dispatch(SessionEvent sessionEvent, AsyncSmppSession session);
+    <E extends SessionEvent> E dispatch(E sessionEvent, AsyncSmppSession session);
 
     boolean hasHandlers(Class<? extends SessionEvent> key);
 

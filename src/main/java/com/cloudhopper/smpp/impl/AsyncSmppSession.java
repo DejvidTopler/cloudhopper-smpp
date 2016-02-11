@@ -19,7 +19,7 @@ public interface AsyncSmppSession {
 
     void destroy();
 
-    void sendAsyncRequestPdu(PduRequest pdu, PduSentCallback callback);
+    void sendRequestPdu(PduRequest pdu, PduSentCallback callback);
 
     void sendResponsePdu(PduResponse pdu) throws RecoverablePduException, UnrecoverablePduException,
             SmppChannelException, InterruptedException;
