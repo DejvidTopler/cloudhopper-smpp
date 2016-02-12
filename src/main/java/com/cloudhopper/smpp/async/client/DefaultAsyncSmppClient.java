@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.impl;
+package com.cloudhopper.smpp.async.client;
 
 /*
  * #%L
@@ -20,16 +20,20 @@ package com.cloudhopper.smpp.impl;
  * #L%
  */
 
+import com.cloudhopper.smpp.AsyncSmppClient;
 import com.cloudhopper.smpp.SmppBindType;
 import com.cloudhopper.smpp.SmppSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
-import com.cloudhopper.smpp.SmppSessionHandler;
+import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.channel.*;
-import com.cloudhopper.smpp.events.EventDispatcher;
-import com.cloudhopper.smpp.events.EventDispatcherImpl;
+import com.cloudhopper.smpp.async.events.support.EventDispatcher;
+import com.cloudhopper.smpp.async.events.support.EventDispatcherImpl;
+import com.cloudhopper.smpp.impl.DefaultSmppSession;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.ssl.SslConfiguration;
 import com.cloudhopper.smpp.ssl.SslContextFactory;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.type.SmppChannelConnectException;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import com.cloudhopper.smpp.type.SmppTimeoutException;
@@ -61,8 +65,8 @@ import java.util.concurrent.TimeUnit;
  *
  * @author joelauer (twitter: @jjlauer or <a href="http://twitter.com/jjlauer" target=window>http://twitter.com/jjlauer</a>)
  */
-public class AsyncSmppClient {
-    private static final Logger logger = LoggerFactory.getLogger(AsyncSmppClient.class);
+public class DefaultAsyncSmppClient implements AsyncSmppClient {
+    private static final Logger logger = LoggerFactory.getLogger(DefaultAsyncSmppClient.class);
 
     private final EventDispatcher eventDispatcher;
     private final ChannelGroup channels;
@@ -71,6 +75,7 @@ public class AsyncSmppClient {
     private final ClientSocketChannelFactory channelFactory;
     private final ClientBootstrap clientBootstrap;
     private final org.jboss.netty.util.Timer writeTimeoutTimer;
+    private final DefaultPduTranscoder transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 
     private static final BindCallback DEFULAT_BIND_CALLBACK = new BindCallback() {
         @Override
@@ -86,7 +91,7 @@ public class AsyncSmppClient {
      * @param executors        used for worker pool
      * @param expectedSessions is maxPoolSize for executors
      */
-    public AsyncSmppClient(ExecutorService executors, int expectedSessions) {
+    public DefaultAsyncSmppClient(ExecutorService executors, int expectedSessions) {
         this.channels = new DefaultChannelGroup();
         this.executors = executors;
         this.channelFactory = new NioClientSocketChannelFactory(
@@ -99,10 +104,17 @@ public class AsyncSmppClient {
         this.eventDispatcher = new EventDispatcherImpl();
     }
 
+    @Override
+    public EventDispatcher getEventDispatcher() {
+        return eventDispatcher;
+    }
+
+    @Override
     public int getConnectionSize() {
         return this.channels.size();
     }
 
+    @Override
     public void destroy() {
         // close all channels still open within this session "bootstrap"
         this.channels.close().awaitUninterruptibly();
@@ -112,7 +124,7 @@ public class AsyncSmppClient {
         this.writeTimeoutTimer.stop();
     }
 
-    protected BaseBind createBindRequest(SmppSessionConfiguration config) throws UnrecoverablePduException {
+    private BaseBind createBindRequest(SmppSessionConfiguration config) throws UnrecoverablePduException {
         BaseBind bind;
         if (config.getType() == SmppBindType.TRANSCEIVER) {
             bind = new BindTransceiver();
@@ -131,10 +143,12 @@ public class AsyncSmppClient {
         return bind;
     }
 
+    @Override
     public void bindAsync(SmppSessionConfiguration config) {
         bindAsync(config, DEFULAT_BIND_CALLBACK);
     }
 
+    @Override
     public void bindAsync(SmppSessionConfiguration config,
             BindCallback bindCallback) {
         if (bindCallback == null) {
@@ -155,9 +169,9 @@ public class AsyncSmppClient {
                 Channel channel = connectFuture.getChannel();
 
                 try {
-                    DefaultSmppSession smppSession = createSession(channel, config);
+                    DefaultAsyncSmppSession smppSession = createSession(channel, config);
                     BaseBind bindRequest = createBindRequest(config);
-                    smppSession.bindAsync(bindRequest, bindCallback);
+                    smppSession.bind(bindRequest, bindCallback);
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
                     bindCallback.onFailure(BindCallback.Reason.SSL_FAILURE, t, null);
                 } catch (UnrecoverablePduException e) {
@@ -172,7 +186,8 @@ public class AsyncSmppClient {
         createConnectedChannel(config.getHost(), config.getPort(), config.getConnectTimeout(), callback);
     }
 
-    private DefaultSmppSession createSession(Channel channel, SmppSessionConfiguration config) throws SmppTimeoutException, SmppChannelException, InterruptedException {
+    private DefaultAsyncSmppSession createSession(Channel channel,
+            SmppSessionConfiguration config) throws SmppTimeoutException, SmppChannelException, InterruptedException {
         DefaultAsyncSmppSession session = new DefaultAsyncSmppSession(SmppSession.Type.CLIENT, config, channel, eventDispatcher);
 
         // add SSL handler
@@ -207,7 +222,7 @@ public class AsyncSmppClient {
         }
 
         // add a new instance of a decoder (that takes care of handling frames)
-        channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(session.getTranscoder()));
+        channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(transcoder));
 
         // create a new wrapper around a session to pass the pdu up the chain
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, new SmppSessionWrapper(session));
@@ -215,7 +230,7 @@ public class AsyncSmppClient {
         return session;
     }
 
-    protected void createConnectedChannel(String host, int port, long connectTimeoutMillis,
+    private void createConnectedChannel(String host, int port, long connectTimeoutMillis,
             ChannelFutureListener channelFutureListener) {
         // a socket address used to "bind" to the remote system
         InetSocketAddress socketAddr = new InetSocketAddress(host, port);

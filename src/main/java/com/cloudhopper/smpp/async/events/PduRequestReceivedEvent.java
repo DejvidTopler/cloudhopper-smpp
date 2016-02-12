@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.events;
+package com.cloudhopper.smpp.async.events;
 
 import com.cloudhopper.smpp.pdu.PduRequest;
 
@@ -7,6 +7,7 @@ import com.cloudhopper.smpp.pdu.PduRequest;
  */
 public class PduRequestReceivedEvent implements SessionEvent {
     private final PduRequest pduRequest;
+    private volatile boolean stopExecution;
 
     public PduRequestReceivedEvent(PduRequest pduRequest) {
         this.pduRequest = pduRequest;
@@ -15,4 +16,13 @@ public class PduRequestReceivedEvent implements SessionEvent {
     public PduRequest getPduRequest() {
         return pduRequest;
     }
+
+    public boolean isStopExecution() {
+        return stopExecution;
+    }
+
+    public void setStopExecution(boolean stopExecution) {
+        this.stopExecution = stopExecution;
+    }
+
 }

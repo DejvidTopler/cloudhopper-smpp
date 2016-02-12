@@ -1,5 +1,6 @@
-package com.cloudhopper.smpp.impl;
+package com.cloudhopper.smpp.async.callback;
 
+import com.cloudhopper.smpp.async.client.DefaultAsyncSmppSession;
 import com.cloudhopper.smpp.pdu.BaseBindResp;
 
 /**

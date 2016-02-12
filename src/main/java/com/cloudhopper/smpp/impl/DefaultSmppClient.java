@@ -48,23 +48,18 @@ import com.cloudhopper.smpp.type.SmppChannelConnectTimeoutException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLEngine;
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioClientBossPool;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
-import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,15 +79,6 @@ public class DefaultSmppClient implements SmppClient {
     private ScheduledExecutorService monitorExecutor;
     // shared instance of a timer for writeTimeout timing
     private final org.jboss.netty.util.Timer writeTimeoutTimer;
-    private static final BindCallback DEFULAT_BIND_CALLBACK = new BindCallback() {
-        @Override
-        public void onBindSucess(SmppSession defaultSmppSession) {
-        }
-
-        @Override
-        public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
-        }
-    };
 
     /**
      * Creates a new default SmppClient. Window monitoring and automatic
@@ -110,8 +96,7 @@ public class DefaultSmppClient implements SmppClient {
      * expiration of requests will be disabled with no monitorExecutors.
      * The maximum number of IO worker threads across any client sessions
      * created with this SmppClient will be Runtime.getRuntime().availableProcessors().
-     *
-     * @param executors The executor that IO workers will be executed with. An
+     * @param executor The executor that IO workers will be executed with. An
      *                 Executors.newCachedDaemonThreadPool() is recommended. The max threads
      *                 will never grow more than expectedSessions if NIO sockets are used.
      */
@@ -122,8 +107,7 @@ public class DefaultSmppClient implements SmppClient {
     /**
      * Creates a new default SmppClient. Window monitoring and automatic
      * expiration of requests will be disabled with no monitorExecutors.
-     *
-     * @param executors         The executor that IO workers will be executed with. An
+     * @param executor The executor that IO workers will be executed with. An
      *                         Executors.newCachedDaemonThreadPool() is recommended. The max threads
      *                         will never grow more than expectedSessions if NIO sockets are used.
      * @param expectedSessions The max number of concurrent sessions expected
@@ -138,8 +122,7 @@ public class DefaultSmppClient implements SmppClient {
 
     /**
      * Creates a new default SmppClient.
-     *
-     * @param executors         The executor that IO workers will be executed with. An
+     * @param executor The executor that IO workers will be executed with. An
      *                         Executors.newCachedDaemonThreadPool() is recommended. The max threads
      *                         will never grow more than expectedSessions if NIO sockets are used.
      * @param expectedSessions The max number of concurrent sessions expected
@@ -155,9 +138,7 @@ public class DefaultSmppClient implements SmppClient {
             ScheduledExecutorService monitorExecutor) {
         this.channels = new DefaultChannelGroup();
         this.executors = executors;
-        this.channelFactory = new NioClientSocketChannelFactory(
-                new NioClientBossPool(Executors.newFixedThreadPool(1), 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
-                new NioWorkerPool(this.executors, expectedSessions, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
+        this.channelFactory = new NioClientSocketChannelFactory(this.executors, this.executors, expectedSessions);
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         // we use the same default pipeline for all new channels - no need for a factory
         this.clientConnector = new SmppClientConnector(this.channels);
@@ -182,7 +163,7 @@ public class DefaultSmppClient implements SmppClient {
     }
 
     protected BaseBind createBindRequest(SmppSessionConfiguration config) throws UnrecoverablePduException {
-        BaseBind bind;
+        BaseBind bind = null;
         if (config.getType() == SmppBindType.TRANSCEIVER) {
             bind = new BindTransceiver();
         } else if (config.getType() == SmppBindType.RECEIVER) {
@@ -227,49 +208,6 @@ public class DefaultSmppClient implements SmppClient {
             }
         }
         return session;
-    }
-
-    @Override
-    public void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler){
-        bindAsync(config, sessionHandler, DEFULAT_BIND_CALLBACK);
-    }
-
-    @Override
-    public void bindAsync(SmppSessionConfiguration config, SmppSessionHandler sessionHandler,
-            BindCallback bindCallback) {
-        if (bindCallback == null) {
-            throw new NullPointerException("AsyncBindCallback can not be null.");
-        }
-
-        ChannelFutureListener callback = connectFuture -> {
-            if (connectFuture.isCancelled()) {
-                bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null);
-            } else if (!connectFuture.isSuccess()) {
-                if (connectFuture.getCause() instanceof org.jboss.netty.channel.ConnectTimeoutException) {
-                    bindCallback.onFailure(BindCallback.Reason.CONNECT_TIMEOUT, connectFuture.getCause(), null);
-                } else {
-                    bindCallback.onFailure(BindCallback.Reason.CONNECTION_REFUSED, connectFuture.getCause(), null);
-                }
-            } else {
-                // if we get here, then we were able to connect and get a channel
-                Channel channel = connectFuture.getChannel();
-
-                try {
-                    DefaultSmppSession smppSession = createSession(channel, config, sessionHandler);
-                    BaseBind bindRequest = createBindRequest(config);
-                    smppSession.bindAsync(bindRequest, bindCallback);
-                } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
-                    bindCallback.onFailure(BindCallback.Reason.SSL_FAILURE, t, null);
-                } catch (UnrecoverablePduException e) {
-                    bindCallback.onFailure(BindCallback.Reason.INVALID_BIND_TYPE, e, null);
-                } catch (Throwable t) {
-                    bindCallback.onFailure(BindCallback.Reason.UNKNOWN, t, null);
-                }
-
-            }
-        };
-
-        createConnectedChannel(config.getHost(), config.getPort(), config.getConnectTimeout(), callback);
     }
 
     protected void doBind(DefaultSmppSession session, SmppSessionConfiguration config,
@@ -369,16 +307,6 @@ public class DefaultSmppClient implements SmppClient {
 
         // if we get here, then we were able to connect and get a channel
         return connectFuture.getChannel();
-    }
-
-    protected void createConnectedChannel(String host, int port, long connectTimeoutMillis, ChannelFutureListener channelFutureListener) {
-        // a socket address used to "bind" to the remote system
-        InetSocketAddress socketAddr = new InetSocketAddress(host, port);
-        // set the timeout
-        this.clientBootstrap.setOption("connectTimeoutMillis", connectTimeoutMillis);
-
-        ChannelFuture connectFuture = this.clientBootstrap.connect(socketAddr);
-        connectFuture.addListener(channelFutureListener);
     }
 
 }

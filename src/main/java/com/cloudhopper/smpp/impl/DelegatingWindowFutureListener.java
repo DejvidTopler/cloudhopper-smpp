@@ -2,6 +2,7 @@ package com.cloudhopper.smpp.impl;
 
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.commons.util.windowing.WindowFutureListener;
+import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.pdu.PduResponse;
 
 /**

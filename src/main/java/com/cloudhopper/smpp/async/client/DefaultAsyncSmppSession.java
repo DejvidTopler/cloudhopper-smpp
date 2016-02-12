@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.impl;
+package com.cloudhopper.smpp.async.client;
 
 /*
  * #%L
@@ -21,13 +21,18 @@ package com.cloudhopper.smpp.impl;
  */
 
 import com.cloudhopper.commons.util.PeriodFormatterUtil;
-import com.cloudhopper.commons.util.windowing.DuplicateKeyException;
-import com.cloudhopper.commons.util.windowing.OfferTimeoutException;
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.SmppSession.*;
-import com.cloudhopper.smpp.events.*;
+import com.cloudhopper.smpp.async.callback.BindCallback;
+import com.cloudhopper.smpp.async.callback.PduSentCallback;
+import com.cloudhopper.smpp.async.events.*;
+import com.cloudhopper.smpp.async.events.support.EventDispatcher;
+import com.cloudhopper.smpp.impl.DefaultSmppSessionCounters;
+import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
+import com.cloudhopper.smpp.impl.DelegatingWindowFutureListener;
+import com.cloudhopper.smpp.impl.SmppSessionChannelListener;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.tlv.TlvConvertException;
@@ -42,7 +47,6 @@ import com.cloudhopper.smpp.util.SequenceNumber;
 import com.cloudhopper.smpp.util.SmppUtil;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.slf4j.Logger;
@@ -51,7 +55,6 @@ import org.slf4j.LoggerFactory;
 import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
-import java.nio.channels.ClosedChannelException;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -296,7 +299,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
     }
 
     @Override
-    public void unbind(UnbindCallback callback) {
+    public void unbind(PduSentCallback callback) {
         if(callback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
@@ -306,52 +309,54 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         sendRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
             @Override
             public void onSuccess(UnbindResp response) {
-                close(future -> callback.onFinished());
+                close(future -> callback.onSuccess(response));
             }
 
             @Override
             public void onFailure(Throwable t) {
-                close(future -> callback.onFinished());
+                close(future -> callback.onFailure(t));
             }
 
             @Override
             public void onExpire() {
-                close(future -> callback.onFinished());
+                close(future -> callback.onExpire());
             }
 
             @Override
             public void onCancel() {
-                close(future -> callback.onFinished());
+                close(future -> callback.onCancel());
             }
         });
     }
 
     private void close(ChannelFutureListener listener){
-        ChannelFuture channelFuture = this.channel.close();
-        ChannelFutureListener unbindListener = future -> {
-            DefaultAsyncSmppSession.this.state.set(STATE_CLOSED);
-            listener.operationComplete(future);
-        };
-
-        channelFuture.addListener(unbindListener);
-    }
-
-    @Override
-    public void destroy() {
-        close(future -> {
-            DefaultAsyncSmppSession.this.sendWindow.destroy();
-            if (DefaultAsyncSmppSession.this.counters != null) {
-                DefaultAsyncSmppSession.this.counters.reset();
-            }
-            // make sure to lose the reference to to the session handler - many
-            // users of this class will probably pass themselves as the reference
-            // and this may help to prevent a circular reference
-            DefaultAsyncSmppSession.this.sessionHandler = null;
+        this.channel.close().addListener(future -> {
+            this.state.set(STATE_CLOSED);
+            if(listener != null)
+                listener.operationComplete(future);
         });
     }
 
     @Override
+    public void destroy() {
+        if (this.channel.isConnected())
+            this.state.set(STATE_UNBINDING);
+
+        close(null);
+
+        DefaultAsyncSmppSession.this.sendWindow.destroy();
+    }
+
+    @Override
     public void sendRequestPdu(PduRequest pdu, PduSentCallback callback) {
+        if(eventDispatcher.hasHandlers(BeforePduRequestSentEvent.class)) {
+            BeforePduRequestSentEvent event = eventDispatcher.dispatch(new BeforePduRequestSentEvent(pdu), this);
+            if(event.isStopExecution()){
+                callback.onCancel();
+                return;
+            }
+        }
+
         try {
             WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu);
             future.addListener(new DelegatingWindowFutureListener<>(callback));
@@ -360,36 +365,30 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         }
     }
 
-    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu) {
+    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu) throws Exception{
         // assign the next PDU sequence # if its not yet assigned
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
         }
-
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        WindowFuture<Integer,PduRequest,PduResponse> future = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, configuration.getRequestExpiryTimeout(), false);
+        WindowFuture<Integer,PduRequest,PduResponse> windowFuture = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, configuration.getRequestExpiryTimeout(), false);
 
-        if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
-            eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
-        }
+        this.channel.write(buffer).addListener(f -> {
+            if (f.isSuccess())
+                DefaultAsyncSmppSession.this.countSendRequestPdu(pdu);
+            else {
+                //there is no point to leave pdu in window to expire, this will also notify all listeners
+                windowFuture.fail(f.getCause());
+            }
+        });
 
-    	ChannelFuture channelFuture = this.channel.write(buffer).await();
-
-        // check if the write was a success
-        if (!channelFuture.isSuccess()) {
-            // the write failed, make sure to throw an exception
-            throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
-        }
-        
-        this.countSendRequestPdu(pdu);
-
-        return future;
+        return windowFuture;
     }
 
     @Override
-    public void sendResponsePdu(PduResponse pdu) throws RecoverablePduException, UnrecoverablePduException, SmppChannelException, InterruptedException {
+    public void sendResponsePdu(PduResponse pdu) {
         // assign the next PDU sequence # if its not yet assigned
         long responseTime = System.currentTimeMillis() - 0; //TODO(DT)
         this.countSendResponsePdu(pdu, responseTime, responseTime);
@@ -402,29 +401,33 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
             BeforePduResponseSentEvent event = new BeforePduResponseSentEvent(pdu);
             eventDispatcher.dispatch(event, this);
             if(event.isStopExecution()) {
-                logger.info("dispatched response PDU discarded: {}", pdu);
                 return;
             }
         }
 
-        ChannelBuffer buffer = transcoder.encode(pdu);
+        ChannelBuffer buffer;
+        try {
+            buffer = transcoder.encode(pdu);
+        } catch (Exception e) {
+            if (eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
+                eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, e), DefaultAsyncSmppSession.this);
+            }
+
+            return;
+        }
 
         // write the pdu out & wait timeout amount of time
-        ChannelFuture channelFuture = this.channel.write(buffer);
-
-        if(eventDispatcher.hasHandlers(PduResponseSentEvent.class) || eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
-            channelFuture.addListener(future -> {
-                if (channelFuture.isSuccess()) {
-                    if(eventDispatcher.hasHandlers(PduResponseSentEvent.class)) {
-                        eventDispatcher.dispatch(new PduResponseSentEvent(pdu), DefaultAsyncSmppSession.this);
-                    }
-                } else {
-                    if(eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
-                        eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, future.getCause()), DefaultAsyncSmppSession.this);
-                    }
+        this.channel.write(buffer).addListener(f -> {
+            if (f.isSuccess()) {
+                if (eventDispatcher.hasHandlers(PduResponseSentEvent.class)) {
+                    eventDispatcher.dispatch(new PduResponseSentEvent(pdu), DefaultAsyncSmppSession.this);
                 }
-            });
-        }
+            } else {
+                if (eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
+                    eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, f.getCause()), DefaultAsyncSmppSession.this);
+                }
+            }
+        });
     }
 
     @SuppressWarnings("unchecked")
@@ -437,8 +440,20 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         }
 
         if (pdu instanceof PduRequest) {
-            if(eventDispatcher.hasHandlers(PduRequestReceivedEvent.class))
-                eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest)pdu), this);
+            PduRequestReceivedEvent event;
+            if(eventDispatcher.hasHandlers(PduRequestReceivedEvent.class)){
+                event = eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest) pdu), this);
+                if(event.isStopExecution())
+                    return;
+            }
+
+            sendResponsePdu(((PduRequest) pdu).createResponse());
+            if(pdu instanceof Unbind) {
+                if (this.channel.isConnected())
+                    this.state.set(STATE_UNBINDING);
+
+                destroy();
+            }
         } else if(pdu instanceof PduResponse) {
             PduResponse responsePdu = (PduResponse) pdu;
             WindowFuture<Integer,PduRequest,PduResponse> future;
@@ -468,50 +483,19 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
     @Override
     public void fireExceptionThrown(Throwable t) {
-        if (t instanceof UnrecoverablePduException) {
-            this.sessionHandler.fireUnrecoverablePduException((UnrecoverablePduException)t);
-        } else if (t instanceof RecoverablePduException) {
-            this.sessionHandler.fireRecoverablePduException((RecoverablePduException)t);
-        } else {
-            // during testing under high load -- java.io.IOException: Connection reset by peer
-            // let's check to see if this session was requested to be closed
-            if (isUnbinding() || isClosed()) {
-                logger.debug("Unbind/close was requested, ignoring exception thrown: {}", t);
-            } else {
-                this.sessionHandler.fireUnknownThrowable(t);
-            }
-        }
+        if(!eventDispatcher.hasHandlers(ExceptionThrownEvent.class))
+            return;
+
+        eventDispatcher.dispatch(new ExceptionThrownEvent(t), this);
     }
 
     @Override
     public void fireChannelClosed() {
-        // most of the time when a channel is closed, we don't necessarily want
-        // to do anything special -- however when a caller is waiting for a response
-        // to a request and we know the channel closed, we should check for those
-        // specific requests and make sure to cancel them
-        if (this.sendWindow.getSize() > 0) {
-            logger.trace("Channel closed and sendWindow has [{}] outstanding requests, some may need cancelled immediately", this.sendWindow.getSize());
-            Map<Integer,WindowFuture<Integer,PduRequest,PduResponse>> requests = this.sendWindow.createSortedSnapshot();
-            Throwable cause = new ClosedChannelException();
-            for (WindowFuture<Integer,PduRequest,PduResponse> future : requests.values()) {
-                // is the caller waiting?
-                if (future.isCallerWaiting()) {
-                    logger.debug("Caller waiting on request [{}], cancelling it with a channel closed exception", future.getKey());
-                    try {
-                        future.fail(cause);
-                    } catch (Exception e) { }
-                }
-            }
+        if(eventDispatcher.hasHandlers(ChannelClosedEvent.class)) {
+            eventDispatcher.dispatch(new ChannelClosedEvent(), this);
         }
 
-        // we need to check if this "unexpected" or "expected" based on whether
-        // this session's unbind() or close() methods triggered a close request
-        if (isUnbinding() || isClosed()) {
-            // do nothing -- ignore it
-            logger.debug("Unbind/close was requested, ignoring channelClosed event");
-        } else {
-            this.sessionHandler.fireChannelUnexpectedlyClosed();
-        }
+        destroy();
     }
 
     private void countSendRequestPdu(PduRequest pdu) {

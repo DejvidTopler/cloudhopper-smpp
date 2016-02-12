@@ -1018,43 +1018,4 @@ public class DefaultSmppSessionTest {
         
         Assert.assertEquals(0, session.getSendWindow().getSize());
     }
-
-    @Test
-    public void testOk() throws Exception {
-        SmppSessionConfiguration configuration = createDefaultConfiguration();
-        registerServerBindProcessor();
-        clearAllServerSessions();
-        final CountDownLatch cdl = new CountDownLatch(1);
-        final Holder<SmppSession> sess = new Holder<>();
-        bootstrap.bindAsync(configuration, null, new BindCallback() {
-            @Override
-            public void onBindSucess(SmppSession smppSession) {
-                sess.value = smppSession;
-                cdl.countDown();
-            }
-
-            @Override
-            public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
-            }
-        });
-
-        cdl.await();
-        SmppSimulatorSessionHandler simulator0 = server.pollNextSession(1000);
-        simulator0.setPduProcessor(null);
-
-        try {
-//            try {
-            // create the requests and response we plan on sending
-            EnquireLink el0 = new EnquireLink();
-            el0.setSequenceNumber(0x7000);
-            EnquireLinkResp el0Resp = el0.createResponse();
-            WindowFuture future0 = sess.value.sendRequestPdu(el0, 3000, true);
-            simulator0.sendPdu(el0Resp);
-            future0.await();
-            assertNotNull(future0.getResponse());
-        } finally {
-            SmppSessionUtil.close(sess.value);
-        }
-    }
-
 }

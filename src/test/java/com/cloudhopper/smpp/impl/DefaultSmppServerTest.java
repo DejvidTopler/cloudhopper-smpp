@@ -55,7 +55,7 @@ public class DefaultSmppServerTest {
     public static final String SYSTEMID = "smppclient1";
     public static final String PASSWORD = "password";
 
-    private TestSmppServerHandler serverHandler = new TestSmppServerHandler();
+    public TestSmppServerHandler serverHandler = new TestSmppServerHandler();
 
     public SmppServerConfiguration createSmppServerConfiguration() {
         SmppServerConfiguration configuration = new SmppServerConfiguration();

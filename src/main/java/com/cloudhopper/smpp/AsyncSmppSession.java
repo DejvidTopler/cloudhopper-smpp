@@ -1,13 +1,11 @@
-package com.cloudhopper.smpp.impl;
+package com.cloudhopper.smpp;
 
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.smpp.SmppBindType;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
+import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
-import com.cloudhopper.smpp.type.RecoverablePduException;
-import com.cloudhopper.smpp.type.SmppChannelException;
-import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import org.jboss.netty.channel.Channel;
 
 /**
@@ -15,15 +13,14 @@ import org.jboss.netty.channel.Channel;
  */
 public interface AsyncSmppSession {
 
-    void unbind(UnbindCallback callback);
 
     void destroy();
 
     void sendRequestPdu(PduRequest pdu, PduSentCallback callback);
 
-    void sendResponsePdu(PduResponse pdu) throws RecoverablePduException, UnrecoverablePduException,
-            SmppChannelException, InterruptedException;
+    void unbind(PduSentCallback callback);
 
+    void sendResponsePdu(PduResponse pdu);
 
     SmppBindType getBindType();
 

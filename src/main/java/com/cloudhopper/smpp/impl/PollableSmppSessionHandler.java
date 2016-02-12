@@ -26,6 +26,9 @@ import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
 import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,6 +48,7 @@ public class PollableSmppSessionHandler implements SmppSessionHandler {
     private final BlockingQueue<PduResponse> receivedUnexpectedPduResponses;
     private final BlockingQueue<Throwable> throwables;
     private final AtomicInteger closedCount;
+    private final List<SmppSessionHandler> listeners = new ArrayList<>();
 
     public PollableSmppSessionHandler() {
         this.receivedPduRequests = new LinkedBlockingQueue<PduRequest>();
@@ -87,17 +91,27 @@ public class PollableSmppSessionHandler implements SmppSessionHandler {
     @Override
     public PduResponse firePduRequestReceived(PduRequest pduRequest) {
         this.receivedPduRequests.add(pduRequest);
-        return null;
+        PduResponse pduResponse = null; //not so good but who cares
+        for (SmppSessionHandler listener : listeners) {
+            pduResponse = listener.firePduRequestReceived(pduRequest);
+        }
+        return pduResponse;
     }
 
     @Override
     public void fireExpectedPduResponseReceived(PduAsyncResponse pduAsyncResponse) {
         this.receivedExpectedPduResponses.add(pduAsyncResponse);
+        for (SmppSessionHandler listener : listeners) {
+            listener.fireExpectedPduResponseReceived(pduAsyncResponse);
+        }
     }
 
     @Override
     public void fireUnexpectedPduResponseReceived(PduResponse pduResponse) {
         this.receivedUnexpectedPduResponses.add(pduResponse);
+        for (SmppSessionHandler listener : listeners) {
+            listener.fireUnexpectedPduResponseReceived(pduResponse);
+        }
     }
 
     @Override
@@ -124,5 +138,12 @@ public class PollableSmppSessionHandler implements SmppSessionHandler {
     public void firePduRequestExpired(PduRequest pduRequest) {
         // do nothing
     }
-    
+
+    public void addListener(SmppSessionHandler listener) {
+        listeners.add(listener);
+    }
+
+    public void removeListener(SmppSessionHandler listener){
+        listeners.remove(listener);
+    }
 }

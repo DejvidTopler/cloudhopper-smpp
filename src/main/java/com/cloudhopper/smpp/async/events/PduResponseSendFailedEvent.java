@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.events;
+package com.cloudhopper.smpp.async.events;
 
 import com.cloudhopper.smpp.pdu.PduResponse;
 

@@ -22,8 +22,6 @@ package com.cloudhopper.smpp;
 
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
-import com.cloudhopper.smpp.impl.PduSentCallback;
-import com.cloudhopper.smpp.impl.UnbindCallback;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import com.cloudhopper.smpp.type.SmppTimeoutException;
 import com.cloudhopper.smpp.pdu.EnquireLink;
@@ -215,9 +213,7 @@ public interface SmppSession {
      *      response is received from the SMSC.
      * @see #close() 
      */
-    void unbind(long timeoutMillis);
-
-    void unbindAsync(UnbindCallback callback);
+    public void unbind(long timeoutMillis);
 
     /**
      * Destroy a session by ensuring the socket is closed and all
@@ -322,9 +318,8 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest request, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
+    public WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest request, long timeoutMillis, boolean synchronous) throws RecoverablePduException, UnrecoverablePduException, SmppTimeoutException, SmppChannelException, InterruptedException;
 
-    void sendAsyncRequestPdu(PduRequest pdu, PduSentCallback callback);
     /**
      * Main underlying method for sending a response PDU to the remote endpoint.
      * The PDU will be converted into a sequence of bytes by the underlying transcoder.
@@ -341,5 +336,5 @@ public interface SmppSession {
      * @throws InterruptedException The calling thread was interrupted while waiting
      *      to acquire a lock or write/read the bytes from the socket/channel.
      */
-    void sendResponsePdu(PduResponse response) throws RecoverablePduException, UnrecoverablePduException, SmppChannelException, InterruptedException;
+    public void sendResponsePdu(PduResponse response) throws RecoverablePduException, UnrecoverablePduException, SmppChannelException, InterruptedException;
 }
