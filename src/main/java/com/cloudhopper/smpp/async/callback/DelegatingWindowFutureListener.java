@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.impl;
+package com.cloudhopper.smpp.async.callback;
 
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.commons.util.windowing.WindowFutureListener;

@@ -31,7 +31,7 @@ import com.cloudhopper.smpp.async.events.*;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionCounters;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
-import com.cloudhopper.smpp.impl.DelegatingWindowFutureListener;
+import com.cloudhopper.smpp.async.callback.DelegatingWindowFutureListener;
 import com.cloudhopper.smpp.impl.SmppSessionChannelListener;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;

@@ -1,8 +1,6 @@
 package com.cloudhopper.smpp;
 
 import com.cloudhopper.commons.util.windowing.Window;
-import com.cloudhopper.smpp.SmppBindType;
-import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;

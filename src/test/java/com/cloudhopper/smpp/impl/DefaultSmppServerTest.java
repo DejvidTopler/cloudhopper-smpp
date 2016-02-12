@@ -576,38 +576,4 @@ public class DefaultSmppServerTest {
             }
         }
     }
-
-    @Test
-    public void serverSessionOK1() throws Exception {
-        DefaultSmppServer server0 = createSmppServer();
-        server0.start();
-
-        try {
-            DefaultSmppClient client0 = new DefaultSmppClient();
-            SmppSessionConfiguration sessionConfig0 = createDefaultConfiguration();
-            // this should actually work
-            SmppSession session0 = client0.bind(sessionConfig0);
-
-            Thread.sleep(100);
-
-            SmppServerSession serverSession0 = serverHandler.sessions.iterator().next();
-            Assert.assertEquals(1, serverHandler.sessions.size());
-            Assert.assertEquals(1, server0.getChannels().size());
-            Assert.assertEquals(true, serverSession0.isBound());
-            Assert.assertEquals(SmppBindType.TRANSCEIVER, serverSession0.getBindType());
-            Assert.assertEquals(SmppSession.Type.SERVER, serverSession0.getLocalType());
-            Assert.assertEquals(SmppSession.Type.CLIENT, serverSession0.getRemoteType());
-
-            SubmitSmResp submitSmResp = session0.submit(new SubmitSm(), 2000);
-            assertNotNull(submitSmResp);
-
-            serverSession0.close();
-            Thread.sleep(200);
-            Assert.assertEquals(0, serverHandler.sessions.size());
-            Assert.assertEquals(0, server0.getChannels().size());
-            Assert.assertEquals(false, serverSession0.isBound());
-        } finally {
-            server0.destroy();
-        }
-    }
 }
