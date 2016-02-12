@@ -572,13 +572,15 @@ public class DefaultSmppSession implements SmppServerSession, SmppSessionChannel
         }
 
         // write the pdu out & wait timeout amount of time
-        ChannelFuture channelFuture = this.channel.write(buffer).await();
+        ChannelFuture channelFuture = this.channel.write(buffer);
 
-        // check if the write was a success
-        if (!channelFuture.isSuccess()) {
-            // the write failed, make sure to throw an exception
-            throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
-        }
+        channelFuture.addListener(future -> {
+            // check if the write was a success
+            if (!channelFuture.isSuccess()) {
+                Throwable e = channelFuture.getCause();
+                logger.error("Unable to cleanly return response PDU: {}", e.getMessage(), e);
+            }
+        });
     }
 
     @SuppressWarnings("unchecked")
