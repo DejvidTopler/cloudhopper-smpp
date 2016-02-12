@@ -433,12 +433,6 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
     @SuppressWarnings("unchecked")
     @Override
     public void firePduReceived(Pdu pdu) {
-        if(eventDispatcher.hasHandlers(PduReceivedEvent.class)) {
-            PduReceivedEvent event = eventDispatcher.dispatch(new PduReceivedEvent(pdu), this);
-            if(event.isStopExecution())
-                return;
-        }
-
         if (pdu instanceof PduRequest) {
             PduRequestReceivedEvent event;
             if(eventDispatcher.hasHandlers(PduRequestReceivedEvent.class)){
@@ -477,6 +471,10 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
                     return;
 
                 eventDispatcher.dispatch(new UnexpectedPduResponseReceivedEvent((PduResponse) pdu), this);
+            }
+        } else {
+            if(eventDispatcher.hasHandlers(AlertNotificationReceivedEvent.class)) {
+                eventDispatcher.dispatch(new AlertNotificationReceivedEvent((AlertNotification) pdu), this);
             }
         }
     }

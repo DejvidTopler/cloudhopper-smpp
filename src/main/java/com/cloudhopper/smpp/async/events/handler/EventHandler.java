@@ -1,4 +1,4 @@
-package com.cloudhopper.smpp.async.events.support;
+package com.cloudhopper.smpp.async.events.handler;
 
 import com.cloudhopper.smpp.async.events.SessionEvent;
 import com.cloudhopper.smpp.AsyncSmppSession;

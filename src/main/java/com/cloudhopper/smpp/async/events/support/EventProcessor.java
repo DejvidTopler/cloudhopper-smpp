@@ -2,6 +2,7 @@ package com.cloudhopper.smpp.async.events.support;
 
 import com.cloudhopper.smpp.async.events.SessionEvent;
 import com.cloudhopper.smpp.AsyncSmppSession;
+import com.cloudhopper.smpp.async.events.handler.EventHandler;
 
 import java.util.List;
 import java.util.concurrent.*;

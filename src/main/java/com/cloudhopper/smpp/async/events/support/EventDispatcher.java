@@ -2,6 +2,7 @@ package com.cloudhopper.smpp.async.events.support;
 
 import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.async.events.SessionEvent;
+import com.cloudhopper.smpp.async.events.handler.EventHandler;
 
 /**
  * Created by ib-dtopler on 23.11.15..
