@@ -4,7 +4,9 @@ import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.SmppServerSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
+import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.DefaultPduSentCallback;
+import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppClient;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppSession;
 import com.cloudhopper.smpp.async.events.BeforePduRequestSentEvent;
@@ -15,10 +17,7 @@ import com.cloudhopper.smpp.impl.DefaultSmppServer;
 import com.cloudhopper.smpp.impl.DefaultSmppServerTest;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
 import com.cloudhopper.smpp.impl.PollableSmppSessionHandler;
-import com.cloudhopper.smpp.pdu.PduRequest;
-import com.cloudhopper.smpp.pdu.PduResponse;
-import com.cloudhopper.smpp.pdu.SubmitSm;
-import com.cloudhopper.smpp.pdu.Unbind;
+import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import org.junit.After;
 import org.junit.Assert;
@@ -33,6 +32,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.Assert.assertEquals;
 
 /**
  * Created by ib-dtopler on 09.02.16..
@@ -78,7 +79,7 @@ public class AsyncClientTest {
         smppSession.sendRequestPdu(new SubmitSm(), new AwaitingPduSentCallback(1, 0, 0, 0));
 
         Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        Assert.assertEquals(2, count.get()); //bind and submit
+        assertEquals(2, count.get()); //bind and submit
     }
 
     @Test
@@ -100,7 +101,7 @@ public class AsyncClientTest {
         smppSession.sendRequestPdu(new SubmitSm(), new DefaultPduSentCallback());
 
         Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        Assert.assertEquals(1, count.get());
+        assertEquals(1, count.get());
     }
 
     @Test
@@ -123,8 +124,31 @@ public class AsyncClientTest {
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequestPdu(new SubmitSm(), callback);
         Assert.assertNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        Assert.assertEquals(1, count.get());
+        assertEquals(1, count.get());
         callback.awaitAll();
+    }
+
+    @Test
+    public void cancelDuplicateBind() throws InterruptedException {
+        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+
+        CountDownLatch wait = new CountDownLatch(1);
+        AtomicReference<BindCallback.Reason> reasonRef = new AtomicReference<>();
+
+        smppSession.bind(new BindReceiver(), new BindCallback() {
+            @Override
+            public void onBindSucess(DefaultAsyncSmppSession smppSession) {
+            }
+
+            @Override
+            public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
+                reasonRef.set(reason);
+                wait.countDown();
+            }
+        });
+
+        wait.await(2, TimeUnit.SECONDS);
+        assertEquals(BindCallback.Reason.INVALID_SESSION_STATE, reasonRef.get());
     }
 
     @Test
@@ -157,20 +181,16 @@ public class AsyncClientTest {
 
     @Test
     public void testSubmitOnCloseSession() throws InterruptedException {
-        ExceptionThrownEventChecker exceptionThrownEventChecker = new ExceptionThrownEventChecker();
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
         DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         smppSession.destroy();
         server.stop();
         sessionClosedWaiter.waitUntilTimeout();
 
-        AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 1, 0, 0);
+        AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequestPdu(new SubmitSm(), callback);
         callback.awaitAll();
-        callback.getException();
-        Assert.assertTrue(callback.getException() instanceof ClosedChannelException);
-
-        Assert.assertTrue(exceptionThrownEventChecker.getError() instanceof ClosedChannelException);
+        callback.assertCancelReason(PduSentCallback.CancelReason.INVALID_SESSION_STATE);
     }
 
     @Test
@@ -188,7 +208,7 @@ public class AsyncClientTest {
         Assert.assertTrue(smppSession.getChannel().isBound());
 
         Thread.sleep(REQ_EXPIRE_TIMEOUT * 2);
-        Assert.assertEquals(1, smppSession.getSendWindow().cancelAllExpired().size());
+        assertEquals(1, smppSession.getSendWindow().cancelAllExpired().size());
 
         callback.awaitAll();
 
@@ -197,9 +217,9 @@ public class AsyncClientTest {
         Assert.assertFalse(smppSession.getChannel().isOpen());
         Assert.assertFalse(smppSession.getChannel().isBound());
 
-        Assert.assertEquals(1, server.getChannelConnects());
-        Assert.assertEquals(1, server.getChannelDisconnects());
-        Assert.assertEquals(0, server.getConnectionSize());
+        assertEquals(1, server.getChannelConnects());
+        assertEquals(1, server.getChannelDisconnects());
+        assertEquals(0, server.getConnectionSize());
     }
 
     @Test

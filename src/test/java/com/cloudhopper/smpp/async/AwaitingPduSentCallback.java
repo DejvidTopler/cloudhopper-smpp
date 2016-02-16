@@ -8,6 +8,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
+
 /**
  * Created by ib-dtopler on 12.02.16..
  */
@@ -18,6 +20,7 @@ public class AwaitingPduSentCallback extends DefaultPduSentCallback {
     private final CountDownLatch expireWait;
     private final CountDownLatch cancelWait;
     private final AtomicReference<Throwable> exception;
+    private final AtomicReference<CancelReason> cancelReasonRef;
 
     public AwaitingPduSentCallback(int expectedSuccess, int expectedFailure, int expectedExpire,
             int expectedCancel) {
@@ -26,6 +29,7 @@ public class AwaitingPduSentCallback extends DefaultPduSentCallback {
         expireWait = new CountDownLatch(expectedExpire);
         cancelWait = new CountDownLatch(expectedCancel);
         exception = new AtomicReference<>();
+        cancelReasonRef = new AtomicReference<>();
     }
 
     public void setTimeoutInSeconds(int timeoutInSeconds) {
@@ -52,9 +56,10 @@ public class AwaitingPduSentCallback extends DefaultPduSentCallback {
     }
 
     @Override
-    public void onCancel() {
-        super.onCancel();
+    public void onCancel(CancelReason cancelReason) {
+        super.onCancel(cancelReason);
         cancelWait.countDown();
+        cancelReasonRef.set(cancelReason);
     }
 
     public void awaitAll() throws InterruptedException {
@@ -83,5 +88,9 @@ public class AwaitingPduSentCallback extends DefaultPduSentCallback {
 
     public Throwable getException() {
         return exception.get();
+    }
+
+    public void assertCancelReason(CancelReason expectedCancelReason){
+        assertEquals(cancelReasonRef.get(), expectedCancelReason);
     }
 }

@@ -1,38 +1,17 @@
 package com.cloudhopper.smpp.async.client;
 
-/*
- * #%L
- * ch-smpp
- * %%
- * Copyright (C) 2009 - 2015 Cloudhopper by Twitter
- * %%
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * 
- *      http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * #L%
- */
 
 import com.cloudhopper.commons.util.PeriodFormatterUtil;
 import com.cloudhopper.commons.util.windowing.Window;
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.*;
-import com.cloudhopper.smpp.SmppSession.*;
 import com.cloudhopper.smpp.async.callback.BindCallback;
+import com.cloudhopper.smpp.async.callback.DelegatingWindowFutureListener;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.async.events.*;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionCounters;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
-import com.cloudhopper.smpp.async.callback.DelegatingWindowFutureListener;
-import com.cloudhopper.smpp.impl.SmppSessionChannelListener;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
 import com.cloudhopper.smpp.tlv.TlvConvertException;
@@ -56,23 +35,28 @@ import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-
-import static com.cloudhopper.smpp.SmppSession.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Default implementation of either an ESME or SMSC SMPP session.
  * 
  * @author joelauer (twitter: @jjlauer or <a href="http://twitter.com/jjlauer" target=window>http://twitter.com/jjlauer</a>)
  */
-public class DefaultAsyncSmppSession implements SmppSessionChannelListener, AsyncSmppSession {
+public class DefaultAsyncSmppSession implements AsyncSmppSession {
     private static final Logger logger = LoggerFactory.getLogger(DefaultAsyncSmppSession.class);
 
-    // are we an "esme" or "smsc" session type?
-    private final Type localType;
+    public enum State {
+        INITIAL,
+        OPEN,
+        BINDING,
+        BOUND,
+        UNBINDING,
+        CLOSED
+    }
+
     // current state of this session
-    private final AtomicInteger state;
+    private final AtomicReference<State> state;
     // the timestamp when we became "bound"
     private final AtomicLong boundTime;
     private final SmppSessionConfiguration configuration;
@@ -91,15 +75,13 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
      * recommended that this constructor is called directly.  The recommended
      * way to construct a session is either via a DefaultSmppClient or
      * DefaultSmppServer.
-     * @param localType The type of local endpoint (ESME vs. SMSC)
      * @param configuration The session configuration
      * @param channel The channel associated with this session. The channel
      * @param eventDispatcher
      */
-    public DefaultAsyncSmppSession(Type localType, SmppSessionConfiguration configuration, Channel channel,
+    public DefaultAsyncSmppSession(SmppSessionConfiguration configuration, Channel channel,
             EventDispatcher eventDispatcher) {
-        this.localType = localType;
-        this.state = new AtomicInteger(SmppSession.STATE_OPEN);
+        this.state = new AtomicReference<>(State.OPEN);
         this.configuration = configuration;
         this.channel = channel;
         this.boundTime = new AtomicLong(0);
@@ -143,20 +125,8 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         return this.configuration.getType();
     }
 
-    public Type getLocalType() {
-        return this.localType;
-    }
-
-    public Type getRemoteType() {
-        if (this.localType == Type.CLIENT) {
-            return Type.SERVER;
-        } else {
-            return Type.CLIENT;
-        }
-    }
-
     private void setBound() {
-        this.state.set(STATE_BOUND);
+        this.state.set(State.BOUND);
         this.boundTime.set(System.currentTimeMillis());
     }
 
@@ -167,12 +137,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
     @Override
     public String getStateName() {
-        int s = this.state.get();
-        if (s >= 0 || s < STATES.length) {
-            return STATES[s];
-        } else {
-            return "UNKNOWN (" + s + ")";
-        }
+        return this.state.get().name();
     }
 
     protected void setInterfaceVersion(byte value) {
@@ -183,33 +148,29 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         return this.interfaceVersion;
     }
 
-    public boolean areOptionalParametersSupported() {
-        return (this.interfaceVersion >= SmppConstants.VERSION_3_4);
-    }
-
     @Override
     public boolean isOpen() {
-        return (this.state.get() == STATE_OPEN);
+        return State.OPEN.equals(this.state.get());
     }
 
     @Override
     public boolean isBinding() {
-        return (this.state.get() == STATE_BINDING);
+        return State.BINDING.equals(this.state.get());
     }
 
     @Override
     public boolean isBound() {
-        return (this.state.get() == STATE_BOUND);
+        return State.BOUND.equals(this.state.get());
     }
 
     @Override
     public boolean isUnbinding() {
-        return (this.state.get() == STATE_UNBINDING);
+        return State.UNBINDING.equals(this.state.get());
     }
 
     @Override
     public boolean isClosed() {
-        return (this.state.get() == STATE_CLOSED);
+        return State.CLOSED.equals(this.state.get());
     }
 
     @Override
@@ -230,17 +191,22 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
     public Window<Integer,PduRequest,PduResponse> getSendWindow() {
         return this.sendWindow;
     }
-    
+
     public boolean hasCounters() {
         return (this.counters != null);
     }
-    
+
     public SmppSessionCounters getCounters() {
         return this.counters;
     }
 
-    protected void bind(BaseBind request, BindCallback bindCallback) {
-        this.state.set(STATE_BINDING);
+    @Override
+    public void bind(BaseBind request, BindCallback bindCallback) {
+        if(!this.state.compareAndSet(State.OPEN, State.BINDING) && !this.state.compareAndSet(State.CLOSED, State.BINDING)){
+            bindCallback.onFailure(BindCallback.Reason.INVALID_SESSION_STATE, null, null);
+            return;
+        }
+
         sendRequestPdu(request, new PduSentCallback<BaseBindResp>() {
             @Override
             public void onSuccess(BaseBindResp bindResp) {
@@ -271,7 +237,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
             }
 
             @Override
-            public void onCancel() {
+            public void onCancel(CancelReason cancelReason) {
                 DefaultAsyncSmppSession.this.close(future -> bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null));
             }
         });
@@ -303,9 +269,7 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         if(callback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
-        if (this.channel.isConnected())
-            this.state.set(STATE_UNBINDING);
-
+        this.state.set(State.UNBINDING);
         sendRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
             @Override
             public void onSuccess(UnbindResp response) {
@@ -323,15 +287,15 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
             }
 
             @Override
-            public void onCancel() {
-                close(future -> callback.onCancel());
+            public void onCancel(CancelReason cancelReason) {
+                close(future -> callback.onCancel(cancelReason));
             }
         });
     }
 
     private void close(ChannelFutureListener listener){
         this.channel.close().addListener(future -> {
-            this.state.set(STATE_CLOSED);
+            this.state.set(State.CLOSED);
             if(listener != null)
                 listener.operationComplete(future);
         });
@@ -339,20 +303,19 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
     @Override
     public void destroy() {
-        if (this.channel.isConnected())
-            this.state.set(STATE_UNBINDING);
-
+        this.state.set(State.UNBINDING);
         close(null);
-
         DefaultAsyncSmppSession.this.sendWindow.destroy();
     }
 
     @Override
     public void sendRequestPdu(PduRequest pdu, PduSentCallback callback) {
+        if (!isSessionReadyForSubmit(pdu, callback)) return;
+
         if(eventDispatcher.hasHandlers(BeforePduRequestSentEvent.class)) {
             BeforePduRequestSentEvent event = eventDispatcher.dispatch(new BeforePduRequestSentEvent(pdu), this);
             if(event.isStopExecution()){
-                callback.onCancel();
+                callback.onCancel(PduSentCallback.CancelReason.STOPPED_EXECUTION);
                 return;
             }
         }
@@ -365,20 +328,41 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
         }
     }
 
+    private boolean isSessionReadyForSubmit(PduRequest pdu, PduSentCallback callback) {
+        if(pdu instanceof BaseBind) {
+            return true;
+        }
+
+        if(pdu instanceof Unbind) {
+            return true;
+        }
+
+        if (!State.BOUND.equals(this.state.get())) {
+            callback.onCancel(PduSentCallback.CancelReason.INVALID_SESSION_STATE);
+            return false;
+        }
+
+        return true;
+    }
+
     private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu) throws Exception{
         // assign the next PDU sequence # if its not yet assigned
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
         }
+
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
         WindowFuture<Integer,PduRequest,PduResponse> windowFuture = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, configuration.getRequestExpiryTimeout(), false);
 
         this.channel.write(buffer).addListener(f -> {
-            if (f.isSuccess())
+            if (f.isSuccess()){
                 DefaultAsyncSmppSession.this.countSendRequestPdu(pdu);
-            else {
+                if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
+                    eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
+                }
+            } else {
                 //there is no point to leave pdu in window to expire, this will also notify all listeners
                 windowFuture.fail(f.getCause());
             }
@@ -389,12 +373,9 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
     @Override
     public void sendResponsePdu(PduResponse pdu) {
-        // assign the next PDU sequence # if its not yet assigned
-        long responseTime = System.currentTimeMillis() - 0; //TODO(DT)
-        this.countSendResponsePdu(pdu, responseTime, responseTime);
-
-        if (!pdu.hasSequenceNumberAssigned()) {
-            pdu.setSequenceNumber(this.sequenceNumber.next());
+        if(!State.BOUND.equals(state.get())){
+            //TODO(DT) notify that pdu is dropped
+            return;
         }
 
         if(eventDispatcher.hasHandlers(BeforePduResponseSentEvent.class)) {
@@ -403,6 +384,14 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
             if(event.isStopExecution()) {
                 return;
             }
+        }
+
+        // assign the next PDU sequence # if its not yet assigned
+        long responseTime = System.currentTimeMillis() - 0; //TODO(DT)
+        this.countSendResponsePdu(pdu, responseTime, responseTime);
+
+        if (!pdu.hasSequenceNumberAssigned()) {
+            pdu.setSequenceNumber(this.sequenceNumber.next());
         }
 
         ChannelBuffer buffer;
@@ -443,9 +432,6 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
             sendResponsePdu(((PduRequest) pdu).createResponse());
             if(pdu instanceof Unbind) {
-                if (this.channel.isConnected())
-                    this.state.set(STATE_UNBINDING);
-
                 destroy();
             }
         } else if(pdu instanceof PduResponse) {
@@ -656,14 +642,6 @@ public class DefaultAsyncSmppSession implements SmppSessionChannelListener, Asyn
 
     public String getInterfaceVersionName() {
         return SmppUtil.toInterfaceVersionString(interfaceVersion);
-    }
-
-    public String getLocalTypeName() {
-        return this.getLocalType().toString();
-    }
-
-    public String getRemoteTypeName() {
-        return this.getRemoteType().toString();
     }
 
     public int getNextSequenceNumber() {

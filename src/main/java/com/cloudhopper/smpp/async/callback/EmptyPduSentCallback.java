@@ -20,6 +20,6 @@ public class EmptyPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onCancel() {
+    public void onCancel(CancelReason cancelReason) {
     }
 }

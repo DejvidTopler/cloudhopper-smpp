@@ -2,7 +2,6 @@ package com.cloudhopper.smpp.async.callback;
 
 import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.commons.util.windowing.WindowFutureListener;
-import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.pdu.PduResponse;
 
 /**
@@ -33,6 +32,6 @@ public class DelegatingWindowFutureListener<K, R, P extends PduResponse> impleme
 
     @Override
     public void onCancel(WindowFuture<K, R, P> windowFuture) {
-        callback.onCancel();
+        callback.onCancel(PduSentCallback.CancelReason.OTHER);
     }
 }

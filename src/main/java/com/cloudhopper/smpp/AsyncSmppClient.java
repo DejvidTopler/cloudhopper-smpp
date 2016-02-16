@@ -1,6 +1,7 @@
 package com.cloudhopper.smpp;
 
 import com.cloudhopper.smpp.async.callback.BindCallback;
+import com.cloudhopper.smpp.async.client.SessionContextFactory;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 
 /**
@@ -18,7 +19,7 @@ public interface AsyncSmppClient {
 
     void destroy();
 
-    void bindAsync(SmppSessionConfiguration config);
+    void bind(SmppSessionConfiguration config, BindCallback bindCallback);
 
-    void bindAsync(SmppSessionConfiguration config, BindCallback bindCallback);
+    void bind(SmppSessionConfiguration config, BindCallback bindCallback, SessionContextFactory sessionContextFactory);
 }

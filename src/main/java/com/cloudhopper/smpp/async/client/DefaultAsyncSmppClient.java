@@ -20,16 +20,16 @@ package com.cloudhopper.smpp.async.client;
  * #L%
  */
 
-import com.cloudhopper.smpp.AsyncSmppClient;
-import com.cloudhopper.smpp.SmppBindType;
-import com.cloudhopper.smpp.SmppSession;
-import com.cloudhopper.smpp.SmppSessionConfiguration;
+import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.async.callback.BindCallback;
-import com.cloudhopper.smpp.channel.*;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 import com.cloudhopper.smpp.async.events.support.EventDispatcherImpl;
+import com.cloudhopper.smpp.channel.*;
 import com.cloudhopper.smpp.impl.DefaultSmppSession;
-import com.cloudhopper.smpp.pdu.*;
+import com.cloudhopper.smpp.pdu.BaseBind;
+import com.cloudhopper.smpp.pdu.BindReceiver;
+import com.cloudhopper.smpp.pdu.BindTransceiver;
+import com.cloudhopper.smpp.pdu.BindTransmitter;
 import com.cloudhopper.smpp.ssl.SslConfiguration;
 import com.cloudhopper.smpp.ssl.SslContextFactory;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
@@ -76,17 +76,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private final ClientBootstrap clientBootstrap;
     private final org.jboss.netty.util.Timer writeTimeoutTimer;
     private final DefaultPduTranscoder transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
-
-    private static final BindCallback DEFULAT_BIND_CALLBACK = new BindCallback() {
-        @Override
-        public void onBindSucess(DefaultAsyncSmppSession smppSession) {
-        }
-
-        @Override
-        public void onFailure(Reason reason, Throwable t, BaseBindResp response) {
-        }
-    };
-
     /**
      * @param executors        used for worker pool
      * @param expectedSessions is maxPoolSize for executors
@@ -144,13 +133,13 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     }
 
     @Override
-    public void bindAsync(SmppSessionConfiguration config) {
-        bindAsync(config, DEFULAT_BIND_CALLBACK);
+    public void bind(SmppSessionConfiguration config, BindCallback bindCallback) {
+        bind(config, bindCallback, null);
     }
 
     @Override
-    public void bindAsync(SmppSessionConfiguration config,
-            BindCallback bindCallback) {
+    public void bind(SmppSessionConfiguration config, BindCallback bindCallback,
+            SessionContextFactory sessionContextFactory) {
         if (bindCallback == null) {
             throw new NullPointerException("AsyncBindCallback can not be null.");
         }
@@ -169,7 +158,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
                 Channel channel = connectFuture.getChannel();
 
                 try {
-                    DefaultAsyncSmppSession smppSession = createSession(channel, config);
+                    AsyncSmppSession smppSession = createSession(channel, config, sessionContextFactory);
                     BaseBind bindRequest = createBindRequest(config);
                     smppSession.bind(bindRequest, bindCallback);
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
@@ -186,9 +175,11 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         createConnectedChannel(config.getHost(), config.getPort(), config.getConnectTimeout(), callback);
     }
 
-    private DefaultAsyncSmppSession createSession(Channel channel,
-            SmppSessionConfiguration config) throws SmppTimeoutException, SmppChannelException, InterruptedException {
-        DefaultAsyncSmppSession session = new DefaultAsyncSmppSession(SmppSession.Type.CLIENT, config, channel, eventDispatcher);
+    private AsyncSmppSession createSession(Channel channel, SmppSessionConfiguration config,
+            SessionContextFactory sessionContextFactory) throws SmppTimeoutException, SmppChannelException, InterruptedException {
+        AsyncSmppSession session = sessionContextFactory == null ?
+                new DefaultAsyncSmppSession(config, channel, eventDispatcher) :
+                sessionContextFactory.createSession(SmppSession.Type.CLIENT, config, channel, eventDispatcher);
 
         // add SSL handler
         if (config.isUseSsl()) {

@@ -27,7 +27,7 @@ public class DefaultPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onCancel() {
+    public void onCancel(CancelReason cancelReason) {
         LOGGER.info("Pdu canceled");
     }
 }

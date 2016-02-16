@@ -30,7 +30,7 @@ public class DelegatingPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onCancel() {
-        delegate.onCancel();
+    public void onCancel(CancelReason cancelReason) {
+        delegate.onCancel(cancelReason);
     }
 }
