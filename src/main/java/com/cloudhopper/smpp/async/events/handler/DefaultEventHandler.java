@@ -9,7 +9,7 @@ import com.cloudhopper.smpp.async.events.SessionEvent;
 public class DefaultEventHandler<R extends SessionEvent> implements EventHandler<R> {
 
     @Override
-    public boolean canHandle(R sessionEvent) {
+    public boolean canHandle(R sessionEvent, AsyncSmppSession session) {
         return true;
     }
 

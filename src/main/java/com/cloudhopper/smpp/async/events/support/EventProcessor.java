@@ -47,7 +47,7 @@ public class EventProcessor {
 
         for (EventHandler eventHandler : eventHandlers) {
             try {
-                if (eventHandler.canHandle(sessionEvent))
+                if (eventHandler.canHandle(sessionEvent, session))
                     eventHandler.handle(sessionEvent, session);
             } catch (Throwable e) {
                 //TODO(DT) log

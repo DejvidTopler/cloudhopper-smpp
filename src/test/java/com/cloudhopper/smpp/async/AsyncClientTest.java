@@ -87,7 +87,7 @@ public class AsyncClientTest {
         AtomicInteger count = new AtomicInteger();
         client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
             @Override
-            public boolean canHandle(BeforePduRequestSentEvent sessionEvent) {
+            public boolean canHandle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
                 return sessionEvent.getPduRequest() instanceof SubmitSm;
             }
 
@@ -109,7 +109,7 @@ public class AsyncClientTest {
         AtomicInteger count = new AtomicInteger();
         client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
             @Override
-            public boolean canHandle(BeforePduRequestSentEvent sessionEvent) {
+            public boolean canHandle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
                 return sessionEvent.getPduRequest() instanceof SubmitSm;
             }
 
