@@ -19,10 +19,7 @@ import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
 import com.cloudhopper.smpp.impl.PollableSmppSessionHandler;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.type.SmppChannelException;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 
 import java.nio.channels.ClosedChannelException;
 import java.util.HashSet;
@@ -63,6 +60,48 @@ public class AsyncClientTest {
     @After
     public void after() {
         server.stop();
+    }
+
+    @Test
+    public void testConnectionTimeout() throws InterruptedException {
+        sessionConfig.setHost("www.google.com");
+        sessionConfig.setPort(81);
+        sessionConfig.setConnectTimeout(150);
+
+        AsyncBindClientAwaiter asyncBindClientAwaiter = new AsyncBindClientAwaiter();
+        asyncBindClientAwaiter.bind(client, sessionConfig);
+        asyncBindClientAwaiter.awaitForReason(BindCallback.Reason.CONNECT_TIMEOUT);
+    }
+
+    @Test
+    @Ignore
+    public void testBufferOverflow() throws InterruptedException {
+        ExceptionThrownEventChecker checker = new ExceptionThrownEventChecker();
+        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
+            @Override
+            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
+                if (pduRequest instanceof SubmitSm){
+                    try {
+                        Thread.sleep(Long.MAX_VALUE);
+                    } catch (InterruptedException e) {
+                    }
+                }
+                return null;
+            }
+        });
+
+
+        sessionConfig.setRequestExpiryTimeout(20_000);
+        sessionConfig.setWindowSize(10_000);
+        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+
+        for(int i = 0; i < 10_000; i++){
+            smppSession.sendRequestPdu(new SubmitSm(), new DefaultPduSentCallback());
+        }
+
+        Thread.sleep(10_000);
+        System.out.println(checker.getError());
+
     }
 
     @Test

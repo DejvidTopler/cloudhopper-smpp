@@ -2,6 +2,7 @@ package com.cloudhopper.smpp.async;
 
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.callback.BindCallback;
+import com.cloudhopper.smpp.async.callback.BindCallback.Reason;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppClient;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppSession;
 import com.cloudhopper.smpp.pdu.BaseBindResp;
@@ -11,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Created by ib-dtopler on 16.02.16..
@@ -18,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 public class AsyncBindClientAwaiter {
     private final CountDownLatch wait = new CountDownLatch(1);
     private final AtomicReference<DefaultAsyncSmppSession> ref = new AtomicReference<>();
-    private final AtomicReference<BindCallback.Reason> reasonRef = new AtomicReference<>();
+    private final AtomicReference<Reason> reasonRef = new AtomicReference<>();
 
     public void bind(DefaultAsyncSmppClient client, SmppSessionConfiguration sessionConfig) {
         client.bind(sessionConfig, new BindCallback() {
@@ -37,12 +39,12 @@ public class AsyncBindClientAwaiter {
     }
 
     public DefaultAsyncSmppSession awaitForSessionBound() throws InterruptedException {
-        wait.await(200, TimeUnit.MILLISECONDS);
+        assertTrue(wait.await(200, TimeUnit.MILLISECONDS));
         return ref.get();
     }
 
-    public void awaitForReason(BindCallback.Reason expectedReason) throws InterruptedException {
-        wait.await(200, TimeUnit.MILLISECONDS);
+    public void awaitForReason(Reason expectedReason) throws InterruptedException {
+        assertTrue(wait.await(300, TimeUnit.MILLISECONDS));
         assertEquals(expectedReason, reasonRef.get());
     }
 }
