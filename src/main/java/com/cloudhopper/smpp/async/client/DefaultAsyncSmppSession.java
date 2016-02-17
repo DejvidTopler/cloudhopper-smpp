@@ -266,6 +266,11 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void unbind(PduSentCallback callback) {
+        unbind(callback, configuration.getRequestExpiryTimeout());
+    }
+
+    @Override
+    public void unbind(PduSentCallback callback, long windowTimeout) {
         if(callback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
@@ -290,7 +295,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             public void onCancel(CancelReason cancelReason) {
                 close(future -> callback.onCancel(cancelReason));
             }
-        });
+        }, windowTimeout);
     }
 
     private void close(ChannelFutureListener listener){
@@ -310,6 +315,11 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void sendRequestPdu(PduRequest pdu, PduSentCallback callback) {
+        sendRequestPdu(pdu, callback, configuration.getRequestExpiryTimeout());
+    }
+
+    @Override
+    public void sendRequestPdu(PduRequest pdu, PduSentCallback callback, long windowTimeout) {
         if (!isSessionReadyForSubmit(pdu, callback)) return;
 
         if(eventDispatcher.hasHandlers(BeforePduRequestSentEvent.class)) {
@@ -321,7 +331,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         }
 
         try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu);
+            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, windowTimeout);
             future.addListener(new DelegatingWindowFutureListener<>(callback));
         } catch (Throwable e) {
             callback.onFailure(e);
@@ -345,7 +355,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         return true;
     }
 
-    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu) throws Exception{
+    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu, long windowTimeout) throws Exception{
         // assign the next PDU sequence # if its not yet assigned
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
@@ -354,7 +364,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        WindowFuture<Integer,PduRequest,PduResponse> windowFuture = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, configuration.getRequestExpiryTimeout(), false);
+        WindowFuture<Integer,PduRequest,PduResponse> windowFuture = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, windowTimeout, false);
 
         this.channel.write(buffer).addListener(f -> {
             if (f.isSuccess()){

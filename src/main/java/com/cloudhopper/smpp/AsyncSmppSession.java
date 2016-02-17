@@ -14,7 +14,6 @@ import org.jboss.netty.channel.Channel;
  */
 public interface AsyncSmppSession extends SmppSessionChannelListener {
 
-
     void destroy();
 
     void sendRequestPdu(PduRequest pdu, PduSentCallback callback);
@@ -22,6 +21,10 @@ public interface AsyncSmppSession extends SmppSessionChannelListener {
     void bind(BaseBind request, BindCallback bindCallback);
 
     void unbind(PduSentCallback callback);
+
+    void unbind(PduSentCallback callback, long windowTimeout);
+
+    void sendRequestPdu(PduRequest pdu, PduSentCallback callback, long windowTimeout);
 
     void sendResponsePdu(PduResponse pdu);
 
