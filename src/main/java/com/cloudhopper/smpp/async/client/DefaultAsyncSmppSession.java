@@ -383,7 +383,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         channelFuture.addListener(f -> {
             if (f.isSuccess()) {
                 if (eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
-                    eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
+                    eventDispatcher.dispatch(new PduRequestSentEvent(ctx), this);
                 }
             } else {
                 window.complete(ctx.getRequest().getSequenceNumber());
