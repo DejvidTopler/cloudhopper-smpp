@@ -20,6 +20,9 @@ public class AsyncWindow {
         if (previous != null)
             throw new DuplicateKeyException("The key [" + key + "] already exists in the window");
 
+
+        //TODO(DT) check window size
+
         ctx.setExpireTimestamp(System.currentTimeMillis() + ctx.getWindowTimeout());
     }
 

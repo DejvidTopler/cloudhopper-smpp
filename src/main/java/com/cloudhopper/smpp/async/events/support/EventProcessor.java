@@ -3,6 +3,8 @@ package com.cloudhopper.smpp.async.events.support;
 import com.cloudhopper.smpp.async.events.SessionEvent;
 import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.async.events.handler.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -11,6 +13,7 @@ import java.util.concurrent.*;
  * Created by ib-dtopler on 30.11.15..
  */
 public class EventProcessor {
+    public static final Logger LOGGER = LoggerFactory.getLogger(EventProcessor.class);
     private static final int QUEUE_LIMIT = 100_000;
 
     private final BlockingQueue<Runnable> queue;
@@ -50,7 +53,7 @@ public class EventProcessor {
                 if (eventHandler.canHandle(sessionEvent, session))
                     eventHandler.handle(sessionEvent, session);
             } catch (Throwable e) {
-                //TODO(DT) log
+                LOGGER.error("Executing handler failed, handler=" + eventHandler + ", message=" + e.getMessage(), e);
             }
         }
     }

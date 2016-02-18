@@ -9,7 +9,7 @@ import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.async.events.*;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
-import com.cloudhopper.smpp.impl.DefaultSmppSessionCounters;
+import com.cloudhopper.smpp.async.exception.InvalidSessionStateException;
 import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
 import com.cloudhopper.smpp.pdu.*;
 import com.cloudhopper.smpp.tlv.Tlv;
@@ -397,7 +397,9 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     @Override
     public void sendResponsePdu(PduResponse pdu) {
         if (!State.BOUND.equals(state.get())) {
-            //TODO(DT) notify that pdu is dropped
+            if (eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class)) {
+                eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, new InvalidSessionStateException()), DefaultAsyncSmppSession.this);
+            }
             return;
         }
 
@@ -425,7 +427,17 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         }
 
         // write the pdu out & wait timeout amount of time
-        this.channel.write(buffer).addListener(f -> {
+        ChannelFuture channelFuture;
+        try {
+            channelFuture = this.channel.write(buffer);
+        } catch (Throwable t) {
+            if (eventDispatcher.hasHandlers(PduResponseSendFailedEvent.class))
+                eventDispatcher.dispatch(new PduResponseSendFailedEvent(pdu, t.getCause()), DefaultAsyncSmppSession.this);
+
+            return;
+        }
+
+        channelFuture.addListener(f -> {
             if (f.isSuccess()) {
                 if (eventDispatcher.hasHandlers(PduResponseSentEvent.class)) {
                     eventDispatcher.dispatch(new PduResponseSentEvent(pdu), DefaultAsyncSmppSession.this);
