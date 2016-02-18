@@ -15,6 +15,7 @@ import com.cloudhopper.smpp.impl.PollableSmppSessionHandler;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
 import com.cloudhopper.smpp.pdu.SubmitSm;
+import com.cloudhopper.smpp.pdu.SubmitSmResp;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import org.junit.After;
 import org.junit.Before;
@@ -73,9 +74,14 @@ public class AsyncClientStressTest {
         AtomicInteger pduRequestCount = new AtomicInteger();
         AtomicInteger pduResponseCount = new AtomicInteger();
 
-        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
+        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent<SubmitSm, SubmitSmResp>>() {
             @Override
-            public void handle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
+            public boolean canHandle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
+                return super.canHandle(sessionEvent, session);
+            }
+
+            @Override
+            public void handle(BeforePduRequestSentEvent<SubmitSm, SubmitSmResp> sessionEvent, AsyncSmppSession session) {
                 pduRequestCount.incrementAndGet();
             }
         });
@@ -108,7 +114,7 @@ public class AsyncClientStressTest {
     private void sendMsgs(int SUBMIT_PER_THREAD, DefaultAsyncSmppSession session, AwaitingPduSentCallback callback) {
         executorService.execute(() -> {
             for (int i = 0; i < SUBMIT_PER_THREAD; i++)
-                session.sendRequestPdu(new SubmitSm(), callback);
+                session.sendRequest(new AsyncRequestContext(new SubmitSm(), session, callback));
         });
     }
 }

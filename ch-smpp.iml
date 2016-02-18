@@ -16,7 +16,7 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Maven: com.cloudhopper:ch-commons-util:6.0.4.2-infobip-SNAPSHOT" level="project" />
+    <orderEntry type="library" name="Maven: com.cloudhopper:ch-commons-util:6.0.2" level="project" />
     <orderEntry type="library" name="Maven: joda-time:joda-time:2.9.2" level="project" />
     <orderEntry type="library" name="Maven: com.cloudhopper:ch-commons-charset:3.0.2" level="project" />
     <orderEntry type="library" name="Maven: org.slf4j:slf4j-api:1.7.13" level="project" />

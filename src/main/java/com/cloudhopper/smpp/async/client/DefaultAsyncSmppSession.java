@@ -2,11 +2,10 @@ package com.cloudhopper.smpp.async.client;
 
 
 import com.cloudhopper.commons.util.PeriodFormatterUtil;
-import com.cloudhopper.commons.util.windowing.Window;
-import com.cloudhopper.commons.util.windowing.WindowFuture;
 import com.cloudhopper.smpp.*;
+import com.cloudhopper.smpp.async.AsyncRequestContext;
+import com.cloudhopper.smpp.async.AsyncWindow;
 import com.cloudhopper.smpp.async.callback.BindCallback;
-import com.cloudhopper.smpp.async.callback.DelegatingWindowFutureListener;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.async.events.*;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
@@ -26,6 +25,7 @@ import com.cloudhopper.smpp.util.SequenceNumber;
 import com.cloudhopper.smpp.util.SmppUtil;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.slf4j.Logger;
@@ -34,13 +34,13 @@ import org.slf4j.LoggerFactory;
 import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
-import java.util.Map;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Default implementation of either an ESME or SMSC SMPP session.
- * 
+ *
  * @author joelauer (twitter: @jjlauer or <a href="http://twitter.com/jjlauer" target=window>http://twitter.com/jjlauer</a>)
  */
 public class DefaultAsyncSmppSession implements AsyncSmppSession {
@@ -64,9 +64,8 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     private SmppSessionHandler sessionHandler;
     private final SequenceNumber sequenceNumber;
     private final PduTranscoder transcoder;
-    private final Window<Integer,PduRequest,PduResponse> sendWindow;
+    private final AsyncWindow window;
     private byte interfaceVersion;
-    private DefaultSmppSessionCounters counters;
     private final EventDispatcher eventDispatcher;
 
 
@@ -75,8 +74,9 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
      * recommended that this constructor is called directly.  The recommended
      * way to construct a session is either via a DefaultSmppClient or
      * DefaultSmppServer.
-     * @param configuration The session configuration
-     * @param channel The channel associated with this session. The channel
+     *
+     * @param configuration   The session configuration
+     * @param channel         The channel associated with this session. The channel
      * @param eventDispatcher
      */
     public DefaultAsyncSmppSession(SmppSessionConfiguration configuration, Channel channel,
@@ -89,15 +89,12 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         this.sequenceNumber = new SequenceNumber();
         // always "wrap" the custom pdu transcoder context with a default one
         this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext(this.sessionHandler));
-        this.sendWindow = new Window<>(configuration.getWindowSize());
+        window = new AsyncWindow();
 
         // these server-only items are null
         this.eventDispatcher = eventDispatcher;
-        if (configuration.isCountersEnabled()) {
-            this.counters = new DefaultSmppSessionCounters();
-        }
     }
-    
+
     public void registerMBean(String objectName) {
         // register the this queue manager as an mbean
         try {
@@ -108,7 +105,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             logger.error("Unable to register DefaultSmppSessionMXBean [{}]", objectName, e);
         }
     }
-    
+
     public void unregisterMBean(String objectName) {
         // register the this queue manager as an mbean
         try {
@@ -188,26 +185,18 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     }
 
     @Override
-    public Window<Integer,PduRequest,PduResponse> getSendWindow() {
-        return this.sendWindow;
-    }
-
-    public boolean hasCounters() {
-        return (this.counters != null);
-    }
-
-    public SmppSessionCounters getCounters() {
-        return this.counters;
+    public AsyncWindow getSendWindow() {
+        return this.window;
     }
 
     @Override
     public void bind(BaseBind request, BindCallback bindCallback) {
-        if(!this.state.compareAndSet(State.OPEN, State.BINDING) && !this.state.compareAndSet(State.CLOSED, State.BINDING)){
+        if (!this.state.compareAndSet(State.OPEN, State.BINDING) && !this.state.compareAndSet(State.CLOSED, State.BINDING)) {
             bindCallback.onFailure(BindCallback.Reason.INVALID_SESSION_STATE, null, null);
             return;
         }
 
-        sendRequestPdu(request, new PduSentCallback<BaseBindResp>() {
+        AsyncRequestContext ctx = new AsyncRequestContext(request, null, new PduSentCallback<BaseBindResp>() {
             @Override
             public void onSuccess(BaseBindResp bindResp) {
                 if (bindResp.getCommandStatus() != SmppConstants.STATUS_OK)
@@ -241,6 +230,8 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
                 DefaultAsyncSmppSession.this.close(future -> bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null));
             }
         });
+
+        sendRequest(ctx);
     }
 
     private void negotiateServerVersion(BaseBindResp bindResponse) {
@@ -271,11 +262,12 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void unbind(PduSentCallback callback, long windowTimeout) {
-        if(callback == null)
+        if (callback == null)
             throw new NullPointerException("Unbind callback can't be null");
 
         this.state.set(State.UNBINDING);
-        sendRequestPdu(new Unbind(), new PduSentCallback<UnbindResp>() {
+
+        AsyncRequestContext ctx = new AsyncRequestContext(new Unbind(), this, new PduSentCallback<UnbindResp>() {
             @Override
             public void onSuccess(UnbindResp response) {
                 close(future -> callback.onSuccess(response));
@@ -295,13 +287,16 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             public void onCancel(CancelReason cancelReason) {
                 close(future -> callback.onCancel(cancelReason));
             }
-        }, windowTimeout);
+        });
+
+        ctx.setWindowTimeout(windowTimeout);
+        sendRequest(ctx);
     }
 
-    private void close(ChannelFutureListener listener){
+    private void close(ChannelFutureListener listener) {
         this.channel.close().addListener(future -> {
             this.state.set(State.CLOSED);
-            if(listener != null)
+            if (listener != null)
                 listener.operationComplete(future);
         });
     }
@@ -310,95 +305,109 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     public void destroy() {
         this.state.set(State.UNBINDING);
         close(null);
-        DefaultAsyncSmppSession.this.sendWindow.destroy();
+        List<AsyncRequestContext> canceled = window.cancelAll();
+        for (AsyncRequestContext ctx : canceled) {
+            PduSentCallback callback = ctx.getCallback();
+            if (callback != null)
+                callback.onCancel(PduSentCallback.CancelReason.DESTROY);
+        }
     }
 
     @Override
-    public void sendRequestPdu(PduRequest pdu, PduSentCallback callback) {
-        sendRequestPdu(pdu, callback, configuration.getRequestExpiryTimeout());
-    }
+    public void sendRequest(AsyncRequestContext ctx) {
+        if (!isSessionReadyForSubmit(ctx)) return;
 
-    @Override
-    public void sendRequestPdu(PduRequest pdu, PduSentCallback callback, long windowTimeout) {
-        if (!isSessionReadyForSubmit(pdu, callback)) return;
-
-        if(eventDispatcher.hasHandlers(BeforePduRequestSentEvent.class)) {
-            BeforePduRequestSentEvent event = eventDispatcher.dispatch(new BeforePduRequestSentEvent(pdu), this);
-            if(event.isStopExecution()){
-                callback.onCancel(PduSentCallback.CancelReason.STOPPED_EXECUTION);
+        if (eventDispatcher.hasHandlers(BeforePduRequestSentEvent.class)) {
+            BeforePduRequestSentEvent event = eventDispatcher.dispatch(new BeforePduRequestSentEvent(ctx), this);
+            if (event.isStopExecution()) {
+                PduSentCallback callback = ctx.getCallback();
+                if (callback != null)
+                    callback.onCancel(PduSentCallback.CancelReason.STOPPED_EXECUTION);
                 return;
             }
         }
 
         try {
-            WindowFuture<Integer, PduRequest, PduResponse> future = sendRequestPdu(pdu, windowTimeout);
-            future.addListener(new DelegatingWindowFutureListener<>(callback));
+            sendRequestPduInternal(ctx);
         } catch (Throwable e) {
-            callback.onFailure(e);
+            PduSentCallback callback = ctx.getCallback();
+            if (callback != null)
+                callback.onFailure(e);
         }
     }
 
-    private boolean isSessionReadyForSubmit(PduRequest pdu, PduSentCallback callback) {
-        if(pdu instanceof BaseBind) {
+    private boolean isSessionReadyForSubmit(AsyncRequestContext ctx) {
+        PduRequest pdu = ctx.getRequest();
+        if (pdu instanceof BaseBind) {
             return true;
         }
 
-        if(pdu instanceof Unbind) {
+        if (pdu instanceof Unbind) {
             return true;
         }
 
         if (!State.BOUND.equals(this.state.get())) {
-            callback.onCancel(PduSentCallback.CancelReason.INVALID_SESSION_STATE);
+            PduSentCallback callback = ctx.getCallback();
+            if (callback != null)
+                callback.onCancel(PduSentCallback.CancelReason.INVALID_SESSION_STATE);
             return false;
         }
 
         return true;
     }
 
-    private WindowFuture<Integer,PduRequest,PduResponse> sendRequestPdu(PduRequest pdu, long windowTimeout) throws Exception{
+    private void sendRequestPduInternal(AsyncRequestContext ctx) throws Exception {
+        PduRequest pdu = ctx.getRequest();
         // assign the next PDU sequence # if its not yet assigned
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
         }
 
+        if (ctx.getWindowTimeout() == 0L) {
+            ctx.setWindowTimeout(configuration.getRequestExpiryTimeout());
+        }
+
         // encode the pdu into a buffer
         ChannelBuffer buffer = transcoder.encode(pdu);
 
-        WindowFuture<Integer,PduRequest,PduResponse> windowFuture = sendWindow.offer(pdu.getSequenceNumber(), pdu, 0, windowTimeout, false);
+        window.insert(ctx);
 
-        this.channel.write(buffer).addListener(f -> {
-            if (f.isSuccess()){
-                DefaultAsyncSmppSession.this.countSendRequestPdu(pdu);
-                if(eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
+        ChannelFuture channelFuture;
+        try {
+            channelFuture = this.channel.write(buffer);
+        } catch (Throwable t){
+            window.complete(ctx.getRequest().getSequenceNumber());
+            throw t;
+        }
+
+        channelFuture.addListener(f -> {
+            if (f.isSuccess()) {
+                if (eventDispatcher.hasHandlers(PduRequestSentEvent.class)) {
                     eventDispatcher.dispatch(new PduRequestSentEvent(pdu), this);
                 }
             } else {
-                //there is no point to leave pdu in window to expire, this will also notify all listeners
-                windowFuture.fail(f.getCause());
+                window.complete(ctx.getRequest().getSequenceNumber());
+                PduSentCallback callback = ctx.getCallback();
+                if (callback != null)
+                    callback.onFailure(f.getCause());
             }
         });
-
-        return windowFuture;
     }
 
     @Override
     public void sendResponsePdu(PduResponse pdu) {
-        if(!State.BOUND.equals(state.get())){
+        if (!State.BOUND.equals(state.get())) {
             //TODO(DT) notify that pdu is dropped
             return;
         }
 
-        if(eventDispatcher.hasHandlers(BeforePduResponseSentEvent.class)) {
+        if (eventDispatcher.hasHandlers(BeforePduResponseSentEvent.class)) {
             BeforePduResponseSentEvent event = new BeforePduResponseSentEvent(pdu);
             eventDispatcher.dispatch(event, this);
-            if(event.isStopExecution()) {
+            if (event.isStopExecution()) {
                 return;
             }
         }
-
-        // assign the next PDU sequence # if its not yet assigned
-        long responseTime = System.currentTimeMillis() - 0; //TODO(DT)
-        this.countSendResponsePdu(pdu, responseTime, responseTime);
 
         if (!pdu.hasSequenceNumberAssigned()) {
             pdu.setSequenceNumber(this.sequenceNumber.next());
@@ -434,42 +443,34 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     public void firePduReceived(Pdu pdu) {
         if (pdu instanceof PduRequest) {
             PduRequestReceivedEvent event;
-            if(eventDispatcher.hasHandlers(PduRequestReceivedEvent.class)){
+            if (eventDispatcher.hasHandlers(PduRequestReceivedEvent.class)) {
                 event = eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest) pdu), this);
-                if(event.isStopExecution())
+                if (event.isStopExecution())
                     return;
             }
 
             sendResponsePdu(((PduRequest) pdu).createResponse());
-            if(pdu instanceof Unbind) {
+            if (pdu instanceof Unbind) {
                 destroy();
             }
-        } else if(pdu instanceof PduResponse) {
-            PduResponse responsePdu = (PduResponse) pdu;
-            WindowFuture<Integer,PduRequest,PduResponse> future;
-            try {
-                future = this.sendWindow.complete(responsePdu.getSequenceNumber(), responsePdu);
-            } catch (InterruptedException e) {
-                logger.error("Nio thread is interrupted while completing window, pduResponse is dropped " + responsePdu, e);
-                return;
-            }
+        } else if (pdu instanceof PduResponse) {
+            PduResponse pduResponse = (PduResponse) pdu;
+            AsyncRequestContext ctx = window.complete(pduResponse.getSequenceNumber());
 
-            if(future != null) {
-                this.countReceiveResponsePdu(responsePdu, future.getOfferToAcceptTime(), future.getAcceptToDoneTime(), (future.getAcceptToDoneTime() / future.getWindowSize()));
+            if (ctx != null) {
+                if (eventDispatcher.hasHandlers(PduResponseReceivedEvent.class))
+                    eventDispatcher.dispatch(new PduResponseReceivedEvent(ctx, pduResponse), this);
 
-                if(!eventDispatcher.hasHandlers(PduResponseReceivedEvent.class))
-                    return;
-
-                eventDispatcher.dispatch(new PduResponseReceivedEvent(future.getRequest(), (PduResponse) pdu), this);
+                PduSentCallback callback = ctx.getCallback();
+                if(callback != null)
+                    callback.onSuccess(pduResponse);
 
             } else {
-                if(!eventDispatcher.hasHandlers(UnexpectedPduResponseReceivedEvent.class))
-                    return;
-
-                eventDispatcher.dispatch(new UnexpectedPduResponseReceivedEvent((PduResponse) pdu), this);
+                if (eventDispatcher.hasHandlers(UnexpectedPduResponseReceivedEvent.class))
+                    eventDispatcher.dispatch(new UnexpectedPduResponseReceivedEvent(pduResponse), this);
             }
         } else {
-            if(eventDispatcher.hasHandlers(AlertNotificationReceivedEvent.class)) {
+            if (eventDispatcher.hasHandlers(AlertNotificationReceivedEvent.class)) {
                 eventDispatcher.dispatch(new AlertNotificationReceivedEvent((AlertNotification) pdu), this);
             }
         }
@@ -477,7 +478,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void fireExceptionThrown(Throwable t) {
-        if(!eventDispatcher.hasHandlers(ExceptionThrownEvent.class))
+        if (!eventDispatcher.hasHandlers(ExceptionThrownEvent.class))
             return;
 
         eventDispatcher.dispatch(new ExceptionThrownEvent(t), this);
@@ -485,163 +486,13 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void fireChannelClosed() {
-        if(eventDispatcher.hasHandlers(ChannelClosedEvent.class)) {
+        if (eventDispatcher.hasHandlers(ChannelClosedEvent.class)) {
             eventDispatcher.dispatch(new ChannelClosedEvent(), this);
         }
 
         destroy();
     }
 
-    private void countSendRequestPdu(PduRequest pdu) {
-        if (this.counters == null) {
-            return;     // noop
-        }
-        
-        if (pdu.isRequest()) {
-            switch (pdu.getCommandId()) {
-                case SmppConstants.CMD_ID_SUBMIT_SM:
-                    this.counters.getTxSubmitSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DELIVER_SM:
-                    this.counters.getTxDeliverSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DATA_SM:
-                    this.counters.getTxDataSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_ENQUIRE_LINK:
-                    this.counters.getTxEnquireLink().incrementRequestAndGet();
-                    break;
-            }
-        }
-    }
-    
-    private void countSendResponsePdu(PduResponse pdu, long responseTime, long estimatedProcessingTime) {
-        if (this.counters == null) {
-            return;     // noop
-        }
-        
-        if (pdu.isResponse()) {
-            switch (pdu.getCommandId()) {
-                case SmppConstants.CMD_ID_SUBMIT_SM_RESP:
-                    this.counters.getRxSubmitSM().incrementResponseAndGet();
-                    this.counters.getRxSubmitSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getRxSubmitSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getRxSubmitSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_DELIVER_SM_RESP:
-                    this.counters.getRxDeliverSM().incrementResponseAndGet();
-                    this.counters.getRxDeliverSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getRxDeliverSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getRxDeliverSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_DATA_SM_RESP:
-                    this.counters.getRxDataSM().incrementResponseAndGet();
-                    this.counters.getRxDataSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getRxDataSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getRxDataSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
-                    this.counters.getRxEnquireLink().incrementResponseAndGet();
-                    this.counters.getRxEnquireLink().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getRxEnquireLink().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getRxEnquireLink().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-            }
-        }
-    }
-    
-    private void countSendRequestPduExpired(PduRequest pdu) {
-        if (this.counters == null) {
-            return;     // noop
-        }
-        
-        if (pdu.isRequest()) {
-            switch (pdu.getCommandId()) {
-                case SmppConstants.CMD_ID_SUBMIT_SM:
-                    this.counters.getTxSubmitSM().incrementRequestExpiredAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DELIVER_SM:
-                    this.counters.getTxDeliverSM().incrementRequestExpiredAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DATA_SM:
-                    this.counters.getTxDataSM().incrementRequestExpiredAndGet();
-                    break;
-                case SmppConstants.CMD_ID_ENQUIRE_LINK:
-                    this.counters.getTxEnquireLink().incrementRequestExpiredAndGet();
-                    break;
-            }
-        }
-    }
-    
-    private void countReceiveRequestPdu(PduRequest pdu) {
-        if (this.counters == null) {
-            return;     // noop
-        }
-        
-        if (pdu.isRequest()) {
-            switch (pdu.getCommandId()) {
-                case SmppConstants.CMD_ID_SUBMIT_SM:
-                    this.counters.getRxSubmitSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DELIVER_SM:
-                    this.counters.getRxDeliverSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_DATA_SM:
-                    this.counters.getRxDataSM().incrementRequestAndGet();
-                    break;
-                case SmppConstants.CMD_ID_ENQUIRE_LINK:
-                    this.counters.getRxEnquireLink().incrementRequestAndGet();
-                    break;
-            }
-        }
-    }
-    
-    private void countReceiveResponsePdu(PduResponse pdu, long waitTime, long responseTime, long estimatedProcessingTime) {
-        if (this.counters == null) {
-            return;     // noop
-        }
-        
-        if (pdu.isResponse()) {
-            switch (pdu.getCommandId()) {
-                case SmppConstants.CMD_ID_SUBMIT_SM_RESP:
-                    this.counters.getTxSubmitSM().incrementResponseAndGet();
-                    this.counters.getTxSubmitSM().addRequestWaitTimeAndGet(waitTime);
-                    this.counters.getTxSubmitSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getTxSubmitSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getTxSubmitSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_DELIVER_SM_RESP:
-                    this.counters.getTxDeliverSM().incrementResponseAndGet();
-                    this.counters.getTxDeliverSM().addRequestWaitTimeAndGet(waitTime);
-                    this.counters.getTxDeliverSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getTxDeliverSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getTxDeliverSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_DATA_SM_RESP:
-                    this.counters.getTxDataSM().incrementResponseAndGet();
-                    this.counters.getTxDataSM().addRequestWaitTimeAndGet(waitTime);
-                    this.counters.getTxDataSM().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getTxDataSM().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getTxDataSM().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-                case SmppConstants.CMD_ID_ENQUIRE_LINK_RESP:
-                    this.counters.getTxEnquireLink().incrementResponseAndGet();
-                    this.counters.getTxEnquireLink().addRequestWaitTimeAndGet(waitTime);
-                    this.counters.getTxEnquireLink().addRequestResponseTimeAndGet(responseTime);
-                    this.counters.getTxEnquireLink().addRequestEstimatedProcessingTimeAndGet(estimatedProcessingTime);
-                    this.counters.getTxEnquireLink().getResponseCommandStatusCounter().incrementAndGet(pdu.getCommandStatus());
-                    break;
-            }
-        }
-    }
-    
-    // mainly for JMX management
-    public void resetCounters() {
-        if (hasCounters()) {
-            this.counters.reset();
-        }
-    }
-    
     public String getBindTypeName() {
         return this.getBindType().toString();
     }
@@ -660,7 +511,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     public String getLocalAddressAndPort() {
         if (this.channel != null) {
-            InetSocketAddress addr = (InetSocketAddress)this.channel.getLocalAddress();
+            InetSocketAddress addr = (InetSocketAddress) this.channel.getLocalAddress();
             return addr.getAddress().getHostAddress() + ":" + addr.getPort();
         } else {
             return null;
@@ -669,7 +520,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     public String getRemoteAddressAndPort() {
         if (this.channel != null) {
-            InetSocketAddress addr = (InetSocketAddress)this.channel.getRemoteAddress();
+            InetSocketAddress addr = (InetSocketAddress) this.channel.getRemoteAddress();
             return addr.getAddress().getHostAddress() + ":" + addr.getPort();
         } else {
             return null;
@@ -696,74 +547,8 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         return this.configuration.getSystemType();
     }
 
-    public int getMaxWindowSize() {
-        return this.sendWindow.getMaxSize();
-    }
-
     public int getWindowSize() {
-        return this.sendWindow.getSize();
+        return this.window.getSize();
     }
 
-    public long getWindowWaitTimeout() {
-        return this.configuration.getWindowWaitTimeout();
-    }
-    
-    public String[] dumpWindow() {
-        Map<Integer,WindowFuture<Integer,PduRequest,PduResponse>> sortedSnapshot = this.sendWindow.createSortedSnapshot();
-        String[] dump = new String[sortedSnapshot.size()];
-        int i = 0;
-        for (WindowFuture<Integer,PduRequest,PduResponse> future : sortedSnapshot.values()) {
-            dump[i] = future.getRequest().toString();
-            i++;
-        }
-        return dump;
-    }
-
-    public String getRxDataSMCounter() {
-        return hasCounters() ? this.counters.getRxDataSM().toString() : null;
-    }
-
-    public String getRxDeliverSMCounter() {
-        return hasCounters() ? this.counters.getRxDeliverSM().toString() : null;
-    }
-
-    public String getRxEnquireLinkCounter() {
-        return hasCounters() ? this.counters.getRxEnquireLink().toString() : null;
-    }
-
-    public String getRxSubmitSMCounter() {
-        return hasCounters() ? this.counters.getRxSubmitSM().toString() : null;
-    }
-
-    public String getTxDataSMCounter() {
-        return hasCounters() ? this.counters.getTxDataSM().toString() : null;
-    }
-
-    public String getTxDeliverSMCounter() {
-        return hasCounters() ? this.counters.getTxDeliverSM().toString() : null;
-    }
-
-    public String getTxEnquireLinkCounter() {
-        return hasCounters() ? this.counters.getTxEnquireLink().toString() : null;
-    }
-
-    public String getTxSubmitSMCounter() {
-        return hasCounters() ? this.counters.getTxSubmitSM().toString() : null;
-    }
-    
-    public void enableLogBytes() {
-        this.configuration.getLoggingOptions().setLogBytes(true);
-    }
-    
-    public void disableLogBytes() {
-        this.configuration.getLoggingOptions().setLogBytes(false);
-    }
-    
-    public void enableLogPdu() {
-        this.configuration.getLoggingOptions().setLogPdu(true);
-    }
-    
-    public void disableLogPdu() {
-        this.configuration.getLoggingOptions().setLogPdu(false);
-    }
 }

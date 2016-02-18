@@ -1,11 +1,11 @@
 package com.cloudhopper.smpp;
 
-import com.cloudhopper.commons.util.windowing.Window;
+import com.cloudhopper.smpp.async.AsyncRequestContext;
+import com.cloudhopper.smpp.async.AsyncWindow;
 import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.impl.SmppSessionChannelListener;
 import com.cloudhopper.smpp.pdu.BaseBind;
-import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
 import org.jboss.netty.channel.Channel;
 
@@ -14,9 +14,6 @@ import org.jboss.netty.channel.Channel;
  */
 public interface AsyncSmppSession extends SmppSessionChannelListener {
 
-    void destroy();
-
-    void sendRequestPdu(PduRequest pdu, PduSentCallback callback);
 
     void bind(BaseBind request, BindCallback bindCallback);
 
@@ -24,9 +21,11 @@ public interface AsyncSmppSession extends SmppSessionChannelListener {
 
     void unbind(PduSentCallback callback, long windowTimeout);
 
-    void sendRequestPdu(PduRequest pdu, PduSentCallback callback, long windowTimeout);
+    void sendRequest(AsyncRequestContext ctx);
 
     void sendResponsePdu(PduResponse pdu);
+
+    void destroy();
 
     SmppBindType getBindType();
 
@@ -48,6 +47,5 @@ public interface AsyncSmppSession extends SmppSessionChannelListener {
 
     Channel getChannel();
 
-    Window<Integer, PduRequest, PduResponse> getSendWindow();
-
+    AsyncWindow getSendWindow();
 }

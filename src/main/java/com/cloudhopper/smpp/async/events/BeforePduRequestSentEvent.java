@@ -1,21 +1,17 @@
 package com.cloudhopper.smpp.async.events;
 
+import com.cloudhopper.smpp.async.AsyncRequestContext;
 import com.cloudhopper.smpp.pdu.PduRequest;
+import com.cloudhopper.smpp.pdu.PduResponse;
 
 /**
  * Created by ib-dtopler on 08.02.16..
  */
-public class BeforePduRequestSentEvent implements SessionEvent {
-    private final PduRequest pduRequest;
-
+public class BeforePduRequestSentEvent<R extends PduRequest<P>, P extends PduResponse> extends CtxAwareEvent {
     private volatile boolean stopExecution;
 
-    public BeforePduRequestSentEvent(PduRequest pduRequest) {
-        this.pduRequest = pduRequest;
-    }
-
-    public PduRequest getPduRequest() {
-        return pduRequest;
+    public BeforePduRequestSentEvent(AsyncRequestContext<R, P> ctx) {
+        super(ctx);
     }
 
     public boolean isStopExecution() {

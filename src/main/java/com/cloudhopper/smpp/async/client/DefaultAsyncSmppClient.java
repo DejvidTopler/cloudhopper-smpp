@@ -49,7 +49,6 @@ import org.jboss.netty.channel.socket.nio.NioClientBossPool;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.jboss.netty.handler.ssl.SslHandler;
-import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +57,6 @@ import javax.net.ssl.SSLEngine;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Default implementation to "bootstrap" client SMPP sessions (create & bind).
@@ -74,8 +72,8 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private final ExecutorService executors;
     private final ClientSocketChannelFactory channelFactory;
     private final ClientBootstrap clientBootstrap;
-    private final org.jboss.netty.util.Timer writeTimeoutTimer;
     private final DefaultPduTranscoder transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
+
     /**
      * @param executors        used for worker pool
      * @param expectedSessions is maxPoolSize for executors
@@ -89,7 +87,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         this.clientConnector = new SmppClientConnector(this.channels);
         this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnector);
-        this.writeTimeoutTimer = new HashedWheelTimer();
         this.eventDispatcher = new EventDispatcherImpl();
     }
 
@@ -109,8 +106,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         this.channels.close().awaitUninterruptibly();
         // clean up all external resources
         this.clientBootstrap.releaseExternalResources();
-        // stop the writeTimeout timer
-        this.writeTimeoutTimer.stop();
     }
 
     private BaseBind createBindRequest(SmppSessionConfiguration config) throws UnrecoverablePduException {
@@ -205,12 +200,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         // create the logging handler (for bytes sent/received on wire)
         SmppSessionLogger loggingHandler = new SmppSessionLogger(DefaultSmppSession.class.getCanonicalName(), config.getLoggingOptions());
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_LOGGER_NAME, loggingHandler);
-
-        // add a writeTimeout handler after the logger
-        if (config.getWriteTimeout() > 0) {
-            WriteTimeoutHandler writeTimeoutHandler = new WriteTimeoutHandler(writeTimeoutTimer, config.getWriteTimeout(), TimeUnit.MILLISECONDS);
-            channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRITE_TIMEOUT_NAME, writeTimeoutHandler);
-        }
 
         // add a new instance of a decoder (that takes care of handling frames)
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, new SmppSessionPduDecoder(transcoder));

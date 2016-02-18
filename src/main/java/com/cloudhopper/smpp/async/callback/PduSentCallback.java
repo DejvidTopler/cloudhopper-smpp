@@ -8,7 +8,7 @@ import com.cloudhopper.smpp.pdu.PduResponse;
 public interface PduSentCallback<P extends PduResponse> {
 
     enum CancelReason {
-        INVALID_SESSION_STATE, OTHER, STOPPED_EXECUTION
+        INVALID_SESSION_STATE, OTHER, DESTROY, STOPPED_EXECUTION
     }
 
     void onSuccess(P response);
