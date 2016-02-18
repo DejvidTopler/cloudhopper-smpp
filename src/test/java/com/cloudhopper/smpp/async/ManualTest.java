@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Created by ib-dtopler on 09.02.16..
  */
-//@Ignore
+@Ignore
 public class ManualTest {
     private static final long REQ_EXPIRE_TIMEOUT = 500;
     private static final int THREAD_COUNT = 10;
