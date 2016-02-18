@@ -220,6 +220,16 @@ public class AsyncClientTest {
     }
 
     @Test
+    public void testCallbackCancelOnDestroy() throws InterruptedException {
+        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
+        smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
+
+        client.destroy();
+        callback.awaitAll();
+    }
+
+    @Test
     public void testSubmitOnCloseSession() throws InterruptedException {
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
         DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
