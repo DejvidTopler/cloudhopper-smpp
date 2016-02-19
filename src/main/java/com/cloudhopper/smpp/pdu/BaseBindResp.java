@@ -51,11 +51,17 @@ public abstract class BaseBindResp extends PduResponse {
     public void readBody(ChannelBuffer buffer) throws UnrecoverablePduException, RecoverablePduException {
         // the body may or may not contain a systemId -- the helper utility
         // method will take care of returning null if there aren't any readable bytes
+        if(getCommandStatus() > 0)
+            return;
+
         this.systemId = ChannelBufferUtil.readNullTerminatedString(buffer);
     }
 
     @Override
     public int calculateByteSizeOfBody() {
+        if(getCommandStatus() > 0)
+            return 0;
+
         int bodyLength = 0;
         bodyLength += PduUtil.calculateByteSizeOfNullTerminatedString(this.systemId);
         return bodyLength;
@@ -63,6 +69,9 @@ public abstract class BaseBindResp extends PduResponse {
 
     @Override
     public void writeBody(ChannelBuffer buffer) throws UnrecoverablePduException, RecoverablePduException {
+        if(getCommandStatus() > 0)
+            return;
+
         ChannelBufferUtil.writeNullTerminatedString(buffer, this.systemId);
     }
 

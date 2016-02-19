@@ -19,6 +19,7 @@ import com.cloudhopper.smpp.pdu.SubmitSmResp;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -31,6 +32,7 @@ import static org.junit.Assert.assertEquals;
 /**
  * Created by ib-dtopler on 09.02.16..
  */
+@Ignore
 public class AsyncClientStressTest {
     private static final long REQ_EXPIRE_TIMEOUT = 500;
     private static final int THREAD_COUNT = 10;

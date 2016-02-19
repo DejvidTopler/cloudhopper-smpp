@@ -94,13 +94,13 @@ public class DefaultSmppServerTest {
             // test name change of sessions
             sessionConfiguration.setName("Test1");
 
-//            if (!SYSTEMID.equals(bindRequest.getSystemId())) {
-//                throw new SmppProcessingException(SmppConstants.STATUS_INVSYSID);
-//            }
-//
-//            if (!PASSWORD.equals(bindRequest.getPassword())) {
-//                throw new SmppProcessingException(SmppConstants.STATUS_INVPASWD);
-//            }
+            if (!SYSTEMID.equals(bindRequest.getSystemId())) {
+                throw new SmppProcessingException(SmppConstants.STATUS_INVSYSID);
+            }
+
+            if (!PASSWORD.equals(bindRequest.getPassword())) {
+                throw new SmppProcessingException(SmppConstants.STATUS_INVPASWD);
+            }
 
             //throw new SmppProcessingException(SmppConstants.STATUS_BINDFAIL, null);
         }

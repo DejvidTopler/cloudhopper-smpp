@@ -112,6 +112,12 @@ public class PduDecoderTest {
     }
 
     @Test
+    public void decodeLogicaSubmitRespWithCommStatusAndTlv() throws Exception {
+        ChannelBuffer buffer = BufferHelper.createBuffer("0000001980000004000000580000007b256400056262626200");
+        SubmitSmResp decode = (SubmitSmResp) transcoder.decode(buffer);
+    }
+
+    @Test
     public void decodeBadPduButSkipAllDataInBuffer() throws Exception {
         ChannelBuffer buffer = BufferHelper.createBuffer("0000001100000110000000000a342ee70F0000001000000015000000000a342ee7");
 
@@ -447,6 +453,7 @@ public class PduDecoderTest {
     }
 
     @Test
+    @Ignore //if commandStatus > 0 ignore body
     public void decodeBindTransceiverRespFailedButWithSystemId() throws Exception {
         // this specific PDU actually failed with legacy smpp library
         ChannelBuffer buffer = BufferHelper.createBuffer("00000015800000090000000e00004db3534d534300");
@@ -459,6 +466,24 @@ public class PduDecoderTest {
         Assert.assertEquals(19891, pdu0.getSequenceNumber());
         Assert.assertEquals(true, pdu0.isResponse());
         Assert.assertEquals("SMSC", pdu0.getSystemId());
+
+        // interesting -- this example has optional parameters it happened to skip...
+        Assert.assertEquals(0, buffer.readableBytes());
+    }
+
+    @Test
+    public void decodeBindTransceiverRespFailedButWithoutSystemId() throws Exception {
+        // this specific PDU actually failed with legacy smpp library
+        ChannelBuffer buffer = BufferHelper.createBuffer("00000010800000090000000E00004DB3");
+
+        BindTransceiverResp pdu0 = (BindTransceiverResp)transcoder.decode(buffer);
+
+        Assert.assertEquals(16, pdu0.getCommandLength());
+        Assert.assertEquals(SmppConstants.CMD_ID_BIND_TRANSCEIVER_RESP, pdu0.getCommandId());
+        Assert.assertEquals(0x0000000e, pdu0.getCommandStatus());
+        Assert.assertEquals(19891, pdu0.getSequenceNumber());
+        Assert.assertEquals(true, pdu0.isResponse());
+        Assert.assertNull(pdu0.getSystemId());
 
         // interesting -- this example has optional parameters it happened to skip...
         Assert.assertEquals(0, buffer.readableBytes());

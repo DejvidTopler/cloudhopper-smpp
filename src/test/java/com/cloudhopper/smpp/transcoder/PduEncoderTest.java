@@ -31,10 +31,14 @@ import com.cloudhopper.smpp.type.SmppInvalidArgumentException;
 
 import java.io.UnsupportedEncodingException;
 
+import com.cloudhopper.smpp.util.TlvUtil;
 import org.junit.*;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 // my imports
 
@@ -134,6 +138,34 @@ public class PduEncoderTest {
     }
 
     @Test
+    public void encodeBindTransceiverRespWithTlv() throws Exception {
+        String msgId = "aaaaaaa";
+        int sequenceNumber = 235857;
+        int status = SmppConstants.STATUS_THROTTLED;
+        short tlv1Key = (short) 0x2564;
+        byte[] tlv1 = {0x01, 0x02, 0x03, 0x04, 0x00};
+        short tlv2Key = (short) 0x3568;
+        String tlv2 = "bbbb";
+
+        SubmitSmResp pdu0 = new SubmitSmResp();
+        pdu0.setSequenceNumber(sequenceNumber);
+        pdu0.setCommandStatus(status);
+        pdu0.setMessageId(msgId);
+        pdu0.addOptionalParameter(new Tlv(tlv1Key, tlv1));
+        Tlv tlv = TlvUtil.createNullTerminatedStringTlv(tlv2Key, tlv2);
+        pdu0.addOptionalParameter(tlv);
+
+        ChannelBuffer buffer = transcoder.encode(pdu0);
+        SubmitSmResp pdu = (SubmitSmResp) transcoder.decode(buffer);
+        assertNull(pdu.getMessageId());
+        assertEquals(status, pdu.getCommandStatus());
+        assertEquals(sequenceNumber, pdu.getSequenceNumber());
+        Assert.assertArrayEquals(tlv1, pdu.getOptionalParameter(tlv1Key).getValue());
+        assertEquals(tlv2, pdu.getOptionalParameter(tlv2Key).getValueAsString());
+    }
+
+    @Test
+    @Ignore //if commandStatus > 0 ignore body
     public void encodeBindTransceiverRespFailedButWithSystemId() throws Exception {
         BindTransceiverResp pdu0 = new BindTransceiverResp();
         pdu0.setSequenceNumber(19891);
@@ -142,6 +174,18 @@ public class PduEncoderTest {
 
         ChannelBuffer buffer = transcoder.encode(pdu0);
         Assert.assertArrayEquals(HexUtil.toByteArray("00000015800000090000000e00004db3534d534300"), BufferHelper.createByteArray(buffer));
+    }
+
+    @Test
+    public void encodeBindTransceiverRespFailedButWithoutSystemId() throws Exception {
+        BindTransceiverResp pdu0 = new BindTransceiverResp();
+        pdu0.setSequenceNumber(19891);
+        pdu0.setCommandStatus(0x0000000e);
+        pdu0.setSystemId("SMSC");
+
+        ChannelBuffer buffer = transcoder.encode(pdu0);
+        System.out.println(HexUtil.toHexString(buffer.array()));
+        Assert.assertArrayEquals(HexUtil.toByteArray("00000010800000090000000E00004DB3"), BufferHelper.createByteArray(buffer));
     }
 
     @Test
@@ -374,7 +418,7 @@ public class PduEncoderTest {
         String expectedHex = "00000130000000040000000000004FE80001013430343034000101343439353133363139323000000000000001000000FF" + HexUtil.toHexString(text255.getBytes("ISO-8859-1")).toUpperCase();
         String actualHex = HexUtil.toHexString(BufferHelper.createByteArray(buffer)).toUpperCase();
         
-        Assert.assertEquals(expectedHex, actualHex);
+        assertEquals(expectedHex, actualHex);
     }
     
     @Test
@@ -426,7 +470,7 @@ public class PduEncoderTest {
         String expectedHex = "000000300000010300000000000000000001013535353237313030303000000139363935000001000424000454657374";
         String actualHex = HexUtil.toHexString(BufferHelper.createByteArray(buffer)).toUpperCase();
         
-        Assert.assertEquals(expectedHex, actualHex);
+        assertEquals(expectedHex, actualHex);
     }
 
     @Test
@@ -515,7 +559,7 @@ public class PduEncoderTest {
         String expectedHex = "00000050000000070000000000004FE86D73672D313233343500010135353532373130303030003135303230333034303530363730382B00303130323033303430353036303030520001020474657874";
         String actualHex = HexUtil.toHexString(BufferHelper.createByteArray(buffer)).toUpperCase();
         
-        Assert.assertEquals(expectedHex, actualHex);
+        assertEquals(expectedHex, actualHex);
     }
 
     @Test
@@ -529,7 +573,7 @@ public class PduEncoderTest {
         
         String expectedHex = "00000010800000070000000200004FE8";
         String actualHex = HexUtil.toHexString(BufferHelper.createByteArray(buffer)).toUpperCase();
-        Assert.assertEquals(expectedHex, actualHex);
+        assertEquals(expectedHex, actualHex);
     }
     
     @Test
@@ -545,6 +589,6 @@ public class PduEncoderTest {
         
         String expectedHex = "00000025000001020000000200004FE8010135353532373130303030000101343034303400";
         String actualHex = HexUtil.toHexString(BufferHelper.createByteArray(buffer)).toUpperCase();
-        Assert.assertEquals(expectedHex, actualHex);
+        assertEquals(expectedHex, actualHex);
     }
 }

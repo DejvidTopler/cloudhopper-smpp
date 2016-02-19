@@ -59,7 +59,7 @@ public class AsyncClientTest {
 
     @After
     public void after() {
-        server.stop();
+        server.destroy();
         client.destroy();
     }
 

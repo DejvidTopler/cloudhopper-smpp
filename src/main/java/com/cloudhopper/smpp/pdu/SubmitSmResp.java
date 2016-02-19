@@ -21,11 +21,37 @@ package com.cloudhopper.smpp.pdu;
  */
 
 import com.cloudhopper.smpp.SmppConstants;
+import com.cloudhopper.smpp.type.RecoverablePduException;
+import com.cloudhopper.smpp.type.UnrecoverablePduException;
+import org.jboss.netty.buffer.ChannelBuffer;
 
 public class SubmitSmResp extends BaseSmResp {
 
     public SubmitSmResp() {
         super(SmppConstants.CMD_ID_SUBMIT_SM_RESP, "submit_sm_resp");
     }
-    
+
+    @Override
+    public void readBody(ChannelBuffer buffer) throws UnrecoverablePduException, RecoverablePduException {
+        if(getCommandStatus() > 0)
+            return;
+
+        super.readBody(buffer);
+    }
+
+    @Override
+    public void writeBody(ChannelBuffer buffer) throws UnrecoverablePduException, RecoverablePduException {
+        if(getCommandStatus() > 0)
+            return;
+
+        super.writeBody(buffer);
+    }
+
+    @Override
+    public int calculateByteSizeOfBody() {
+        if(getCommandStatus() > 0)
+            return 0;
+
+        return super.calculateByteSizeOfBody();
+    }
 }
