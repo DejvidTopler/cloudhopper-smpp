@@ -15,6 +15,7 @@ public class AsyncRequestContext<R extends PduRequest<P>, P extends PduResponse>
     private final PduSentCallback<P> callback;
     private volatile long windowTimeout;
     private volatile long expireTimestamp;
+    private volatile long insertTimestamp;
 
 
     public AsyncRequestContext(R request, AsyncSmppSession session, PduSentCallback<P> callback) {
@@ -49,5 +50,13 @@ public class AsyncRequestContext<R extends PduRequest<P>, P extends PduResponse>
 
     public void setExpireTimestamp(long expireTimestamp) {
         this.expireTimestamp = expireTimestamp;
+    }
+
+    public long getInsertTimestamp() {
+        return insertTimestamp;
+    }
+
+    public void setInsertTimestamp(long insertTimestamp) {
+        this.insertTimestamp = insertTimestamp;
     }
 }

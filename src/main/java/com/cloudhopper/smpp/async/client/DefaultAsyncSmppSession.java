@@ -305,12 +305,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     public void destroy() {
         this.state.set(State.UNBINDING);
         close(null);
-        List<AsyncRequestContext> canceled = window.cancelAll();
-        for (AsyncRequestContext ctx : canceled) {
-            PduSentCallback callback = ctx.getCallback();
-            if (callback != null)
-                callback.onCancel(PduSentCallback.CancelReason.DESTROY);
-        }
+        window.cancelAll(PduSentCallback.CancelReason.DESTROY);
     }
 
     @Override

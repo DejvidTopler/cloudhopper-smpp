@@ -1,6 +1,7 @@
 package com.cloudhopper.smpp.async;
 
 import com.cloudhopper.commons.util.windowing.DuplicateKeyException;
+import com.cloudhopper.smpp.async.callback.PduSentCallback;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,20 +24,28 @@ public class AsyncWindow {
 
         //TODO(DT) check window size
 
-        ctx.setExpireTimestamp(System.currentTimeMillis() + ctx.getWindowTimeout());
+        long now = System.currentTimeMillis();
+        ctx.setInsertTimestamp(now);
+        ctx.setExpireTimestamp(now + ctx.getWindowTimeout());
     }
 
     public AsyncRequestContext complete(int key) {
         return container.remove(key);
     }
 
-    public List<AsyncRequestContext> cancelAll() {
+    public List<AsyncRequestContext> cancelAll(PduSentCallback.CancelReason cancelReason) {
         List<AsyncRequestContext> ret = new ArrayList<>();
         container.forEach((key, asyncRequestContext) -> {
             AsyncRequestContext val = container.remove(key);
             if (val != null)
                 ret.add(val);
         });
+
+        ret.forEach((ctx) -> {
+            if (ctx.getCallback() != null)
+                ctx.getCallback().onCancel(cancelReason);
+        });
+
         return ret;
     }
 
