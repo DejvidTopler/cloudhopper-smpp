@@ -231,6 +231,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             }
         });
 
+        ctx.setWindowTimeout(configuration.getBindTimeout());
         sendRequest(ctx);
     }
 
