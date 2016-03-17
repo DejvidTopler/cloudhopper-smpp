@@ -258,7 +258,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
 
     @Override
     public void unbind(PduSentCallback callback) {
-        unbind(callback, configuration.getRequestExpiryTimeout());
+        unbind(callback, configuration.getBindTimeout());
     }
 
     @Override
