@@ -57,7 +57,7 @@ public class AsyncWindow {
         long now = System.currentTimeMillis();
         List<AsyncRequestContext> ret = new ArrayList<>();
         container.forEach((key, ctx) -> {
-            if (now > ctx.getExpireTimestamp()) {
+            if (ctx.getExpireTimestamp() > 0 && now > ctx.getExpireTimestamp()) {
                 AsyncRequestContext expired = container.remove(key);
                 if (expired != null) {
                     ret.add(expired);
