@@ -34,7 +34,6 @@ import org.slf4j.LoggerFactory;
 import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -450,14 +449,15 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
     @Override
     public void firePduReceived(Pdu pdu) {
         if (pdu instanceof PduRequest) {
-            PduRequestReceivedEvent event;
+            PduRequestReceivedEvent event = null;
             if (eventDispatcher.hasHandlers(PduRequestReceivedEvent.class)) {
-                event = eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest) pdu), this);
+                event = eventDispatcher.dispatch(new PduRequestReceivedEvent((PduRequest) pdu, ((PduRequest) pdu).createResponse()), this);
                 if (event.isStopExecution())
                     return;
             }
 
-            sendResponsePdu(((PduRequest) pdu).createResponse());
+            PduResponse response = event != null ? event.getPduResponse() : ((PduRequest) pdu).createResponse();
+            sendResponsePdu(response);
             if (pdu instanceof Unbind) {
                 destroy();
             }
