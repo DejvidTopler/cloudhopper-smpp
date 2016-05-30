@@ -51,7 +51,7 @@ public class AsyncClientTest {
         serverSessionHandler = test.serverHandler.sessionHandler;
         serverSessions = test.serverHandler.sessions;
         server.start();
-        client = new DefaultAsyncSmppClient(Executors.newFixedThreadPool(4), 4);
+        client = new DefaultAsyncSmppClient(Executors.newFixedThreadPool(4), Executors.newFixedThreadPool(1), 4);
         sessionConfig = test.createDefaultConfiguration();
         sessionConfig.setRequestExpiryTimeout(REQ_EXPIRE_TIMEOUT);
         sessionConfig.setWindowSize(10);

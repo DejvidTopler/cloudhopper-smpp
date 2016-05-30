@@ -56,7 +56,6 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLEngine;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Default implementation to "bootstrap" client SMPP sessions (create & bind).
@@ -69,6 +68,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private final EventDispatcher eventDispatcher;
     private final ChannelGroup channels;
     private final SmppClientConnector clientConnector;
+    private final ExecutorService selectorExecutors;
     private final ExecutorService executors;
     private final ClientSocketChannelFactory channelFactory;
     private final ClientBootstrap clientBootstrap;
@@ -78,11 +78,12 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
      * @param executors        used for worker pool
      * @param expectedSessions is maxPoolSize for executors
      */
-    public DefaultAsyncSmppClient(ExecutorService executors, int expectedSessions) {
+    public DefaultAsyncSmppClient(ExecutorService executors, ExecutorService selectorExecutors, int expectedSessions) {
         this.channels = new DefaultChannelGroup();
         this.executors = executors;
+        this.selectorExecutors = selectorExecutors;
         this.channelFactory = new NioClientSocketChannelFactory(
-                new NioClientBossPool(Executors.newFixedThreadPool(1), 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
+                new NioClientBossPool(this.selectorExecutors, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
                 new NioWorkerPool(this.executors, expectedSessions, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         this.clientConnector = new SmppClientConnector(this.channels);
