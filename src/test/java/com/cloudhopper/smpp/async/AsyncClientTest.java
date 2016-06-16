@@ -1,28 +1,25 @@
 package com.cloudhopper.smpp.async;
 
-import com.cloudhopper.commons.util.windowing.WindowFuture;
-import com.cloudhopper.smpp.AsyncSmppSession;
-import com.cloudhopper.smpp.SmppServerSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.DefaultPduSentCallback;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppClient;
-import com.cloudhopper.smpp.async.client.DefaultAsyncSmppSession;
-import com.cloudhopper.smpp.async.events.BeforePduRequestSentEvent;
 import com.cloudhopper.smpp.async.events.ChannelClosedEvent;
 import com.cloudhopper.smpp.async.events.ExceptionThrownEvent;
+import com.cloudhopper.smpp.async.events.PduRequestReceivedEvent;
 import com.cloudhopper.smpp.async.events.handler.DefaultEventHandler;
-import com.cloudhopper.smpp.impl.DefaultSmppServer;
-import com.cloudhopper.smpp.impl.DefaultSmppServerTest;
-import com.cloudhopper.smpp.impl.DefaultSmppSessionHandler;
-import com.cloudhopper.smpp.impl.PollableSmppSessionHandler;
-import com.cloudhopper.smpp.pdu.*;
+import com.cloudhopper.smpp.async.events.handler.EventHandler;
+import com.cloudhopper.smpp.async.server.DefaultAsyncSmppServer;
+import com.cloudhopper.smpp.async.session.AsyncSmppSession;
+import com.cloudhopper.smpp.async.session.DefaultAsyncClientSmppSession;
+import com.cloudhopper.smpp.pdu.BaseBindResp;
+import com.cloudhopper.smpp.pdu.BindReceiver;
+import com.cloudhopper.smpp.pdu.SubmitSm;
 import com.cloudhopper.smpp.type.SmppChannelException;
 import org.junit.*;
 
 import java.nio.channels.ClosedChannelException;
-import java.util.HashSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -30,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.jayway.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -38,21 +36,16 @@ import static org.junit.Assert.assertEquals;
 public class AsyncClientTest {
     private static final long REQ_EXPIRE_TIMEOUT = 500;
 
-    private DefaultSmppServer server;
+    private DefaultAsyncSmppServer server;
     private DefaultAsyncSmppClient client;
     private SmppSessionConfiguration sessionConfig;
-    private PollableSmppSessionHandler serverSessionHandler;
-    private HashSet<SmppServerSession> serverSessions;
 
     @Before
     public void before() throws SmppChannelException {
-        DefaultSmppServerTest test = new DefaultSmppServerTest();
-        server = test.createSmppServer();
-        serverSessionHandler = test.serverHandler.sessionHandler;
-        serverSessions = test.serverHandler.sessions;
+        server = AsyncClientTestUtils.createSmppServer();
         server.start();
-        client = new DefaultAsyncSmppClient(Executors.newFixedThreadPool(4), Executors.newFixedThreadPool(1), 4);
-        sessionConfig = test.createDefaultConfiguration();
+        client = AsyncClientTestUtils.createSmppClient();
+        sessionConfig = AsyncClientTestUtils.createDefaultConfiguration();
         sessionConfig.setRequestExpiryTimeout(REQ_EXPIRE_TIMEOUT);
         sessionConfig.setWindowSize(10);
     }
@@ -78,25 +71,25 @@ public class AsyncClientTest {
     @Ignore
     public void testBufferOverflow() throws InterruptedException {
         ExceptionThrownEventChecker checker = new ExceptionThrownEventChecker();
-        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
-            @Override
-            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
-                if (pduRequest instanceof SubmitSm){
-                    try {
-                        Thread.sleep(Long.MAX_VALUE);
-                    } catch (InterruptedException e) {
-                    }
-                }
-                return null;
-            }
-        });
+//        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
+//            @Override
+//            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
+//                if (pduRequest instanceof SubmitSm){
+//                    try {
+//                        Thread.sleep(Long.MAX_VALUE);
+//                    } catch (InterruptedException e) {
+//                    }
+//                }
+//                return null;
+//            }
+//        });
 
 
         sessionConfig.setRequestExpiryTimeout(20_000);
         sessionConfig.setWindowSize(10_000);
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
 
-        for(int i = 0; i < 10_000; i++){
+        for (int i = 0; i < 10_000; i++) {
             smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, new DefaultPduSentCallback()));
         }
 
@@ -107,77 +100,51 @@ public class AsyncClientTest {
 
     @Test
     public void testBeforePduRequestSentEvent() throws InterruptedException {
-        AtomicInteger count = new AtomicInteger();
-        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
-            @Override
-            public void handle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
-                count.incrementAndGet();
-            }
-        });
+        AtomicInteger clientPduReqSentCount = AsyncClientTestUtils.addClientReqCounter(client);
+        AtomicInteger serverPduReqRecCount = AsyncClientTestUtils.addServerReqCounter(server);
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, new AwaitingPduSentCallback(1, 0, 0, 0)));
 
-        Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        assertEquals(2, count.get()); //bind and submit
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverPduReqRecCount.get() == 2);
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> clientPduReqSentCount.get() == 2);
     }
 
     @Test
     public void testBeforePduRequestSentEventOnlySubmit() throws InterruptedException {
-        AtomicInteger count = new AtomicInteger();
-        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent<SubmitSm, SubmitSmResp>>() {
-            @Override
-            public boolean canHandle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
-                return sessionEvent.getCtx().getRequest() instanceof SubmitSm;
-            }
+        AtomicInteger serverPduReqRecCount = AsyncClientTestUtils.addServerReqCounter(server);
+        AtomicInteger clientSubmitSmCount = AsyncClientTestUtils.addClientSubmitSmCounter(client, false);
 
-            @Override
-            public void handle(BeforePduRequestSentEvent<SubmitSm, SubmitSmResp> sessionEvent, AsyncSmppSession session) {
-                count.incrementAndGet();
-            }
-        });
-
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, new DefaultPduSentCallback()));
 
-        Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        assertEquals(1, count.get());
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverPduReqRecCount.get() == 2);
+        assertEquals(1, clientSubmitSmCount.get());
     }
 
     @Test
     public void testBeforePduRequestSentEventPreventExecution() throws InterruptedException {
-        AtomicInteger count = new AtomicInteger();
-        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
-            @Override
-            public boolean canHandle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
-                return sessionEvent.getCtx().getRequest() instanceof SubmitSm;
-            }
+        AtomicInteger serverPduReqRecCount = AsyncClientTestUtils.addServerReqCounter(server);
+        AtomicInteger clientSubmitSmCount = AsyncClientTestUtils.addClientSubmitSmCounter(client, true);
 
-            @Override
-            public void handle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
-                count.incrementAndGet();
-                sessionEvent.setStopExecution(true);
-            }
-        });
-
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
-        Assert.assertNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
-        assertEquals(1, count.get());
+        assertEquals(1, serverPduReqRecCount.get());
+        assertEquals(1, clientSubmitSmCount.get());
         callback.awaitAll();
     }
 
     @Test
     public void cancelDuplicateBind() throws InterruptedException {
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
 
         CountDownLatch wait = new CountDownLatch(1);
         AtomicReference<BindCallback.Reason> reasonRef = new AtomicReference<>();
 
         smppSession.bind(new BindReceiver(), new BindCallback() {
             @Override
-            public void onBindSucess(DefaultAsyncSmppSession smppSession) {
+            public void onBindSucess(DefaultAsyncClientSmppSession smppSession) {
             }
 
             @Override
@@ -193,16 +160,16 @@ public class AsyncClientTest {
 
     @Test
     public void testCallbackSuccess() throws InterruptedException {
-        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
-            @Override
-            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
-                if (pduRequest instanceof SubmitSm)
-                    return pduRequest.createResponse();
-                return null;
-            }
-        });
+//        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
+//            @Override
+//            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
+//                if (pduRequest instanceof SubmitSm)
+//                    return pduRequest.createResponse();
+//                return null;
+//            }
+//        });
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(1, 0, 0, 0);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
         callback.awaitAll();
@@ -210,7 +177,8 @@ public class AsyncClientTest {
 
     @Test
     public void testCallbackExpire() throws InterruptedException {
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        AsyncClientTestUtils.blockServerRespExceptBind(server);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 1, 0);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
 
@@ -221,9 +189,12 @@ public class AsyncClientTest {
 
     @Test
     public void testCallbackCancelOnDestroy() throws InterruptedException {
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        AtomicInteger serverSubmitRecCounter = AsyncClientTestUtils.addServerSubmitSmCounter(server, true);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
+
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverSubmitRecCounter.get() == 1);
 
         client.destroy();
         callback.awaitAll();
@@ -232,7 +203,7 @@ public class AsyncClientTest {
     @Test
     public void testSubmitOnCloseSession() throws InterruptedException {
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         smppSession.destroy();
         server.stop();
         sessionClosedWaiter.waitUntilTimeout();
@@ -245,7 +216,8 @@ public class AsyncClientTest {
 
     @Test
     public void testUnbindExpired() throws InterruptedException {
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        AsyncClientTestUtils.blockServerRespExceptBind(server);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         Assert.assertNotNull(smppSession);
 
         Assert.assertTrue(smppSession.isBound());
@@ -267,8 +239,8 @@ public class AsyncClientTest {
         Assert.assertFalse(smppSession.getChannel().isOpen());
         Assert.assertFalse(smppSession.getChannel().isBound());
 
-        assertEquals(1, server.getChannelConnects());
-        assertEquals(1, server.getChannelDisconnects());
+        assertEquals(1, server.getCounters().getChannelConnects());
+        assertEquals(1, server.getCounters().getChannelDisconnects());
         assertEquals(0, server.getConnectionSize());
     }
 
@@ -276,7 +248,7 @@ public class AsyncClientTest {
     public void testUnbindOnClosedSession() throws InterruptedException {
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         Assert.assertNotNull(smppSession);
         smppSession.destroy();
         sessionClosedWaiter.waitUntilTimeout();
@@ -290,12 +262,13 @@ public class AsyncClientTest {
 
     @Test
     public void testUnexpectedCloseSession() throws InterruptedException {
+        AtomicInteger serverSubmitCount = AsyncClientTestUtils.addServerSubmitSmCounter(server, true);
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback sentCallback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, sentCallback));
-        Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverSubmitCount.get() == 1);
 
         server.stop();
 
@@ -306,29 +279,21 @@ public class AsyncClientTest {
 
     @Test
     public void testCloseSessionOnRequestedUnbind() throws InterruptedException {
-        serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
-            @Override
-            public PduResponse firePduRequestReceived(PduRequest pduRequest) {
-                if (pduRequest instanceof Unbind)
-                    return pduRequest.createResponse();
-                return null;
-            }
-        });
-
+        AtomicInteger serverPduReqRecCount = AsyncClientTestUtils.addServerSubmitSmCounter(server, true);
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
-        AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
-        smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        AwaitingPduSentCallback submitCallback = new AwaitingPduSentCallback(0, 0, 0, 1);
+        smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, submitCallback));
 
-        Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverPduReqRecCount.get() == 1);
 
         AwaitingPduSentCallback unbindCallback = new AwaitingPduSentCallback(1, 0, 0, 0);
         smppSession.unbind(unbindCallback);
         Assert.assertTrue(smppSession.isUnbinding());
 
         unbindCallback.awaitAll();
-        callback.awaitAll();
+        submitCallback.awaitAll();
         sessionClosedWaiter.waitUntilTimeout();
         Assert.assertTrue(smppSession.isClosed());
     }
@@ -337,16 +302,17 @@ public class AsyncClientTest {
 
     @Test
     public void testCloseSessionOnServerUnbind() throws InterruptedException {
-        ServerUnbindResponseWaiter serverUnbindResponseWaiter = new ServerUnbindResponseWaiter();
+        AtomicInteger serverSubmitSmCounter = AsyncClientTestUtils.addServerSubmitSmCounter(server, true);
         ClientSessionClosedWaiter sessionClosedWaiter = new ClientSessionClosedWaiter();
 
-        DefaultAsyncSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
+        DefaultAsyncClientSmppSession smppSession = AsyncClientTestUtils.bindSync(client, sessionConfig);
         AwaitingPduSentCallback callback = new AwaitingPduSentCallback(0, 0, 0, 1);
         smppSession.sendRequest(new AsyncRequestContext(new SubmitSm(), smppSession, callback));
 
-        Assert.assertNotNull(serverSessionHandler.getReceivedPduRequests().poll(2, TimeUnit.SECONDS));
+        await().atMost(200, TimeUnit.MILLISECONDS).until(() -> serverSubmitSmCounter.get() == 1);
 
-        serverUnbindResponseWaiter.waitOrTimeout();
+        AwaitingPduSentCallback unbindCallback = new AwaitingPduSentCallback(1, 0, 0, 0);
+        server.getSessions().values().iterator().next().unbind(unbindCallback);
         callback.awaitAll();
         sessionClosedWaiter.waitUntilTimeout();
         Assert.assertTrue(smppSession.isClosed());
@@ -375,12 +341,7 @@ public class AsyncClientTest {
 
         public ClientSessionClosedWaiter() {
             chCloseEventInvoked = new CountDownLatch(1);
-            client.getEventDispatcher().addHandler(ChannelClosedEvent.class, new DefaultEventHandler<ChannelClosedEvent>() {
-                @Override
-                public void handle(ChannelClosedEvent sessionEvent, AsyncSmppSession session) {
-                    chCloseEventInvoked.countDown();
-                }
-            });
+            client.getEventDispatcher().addHandler(ChannelClosedEvent.class, (DefaultEventHandler<ChannelClosedEvent>) (sessionEvent, session) -> chCloseEventInvoked.countDown());
         }
 
         public void waitUntilTimeout() throws InterruptedException {
@@ -395,21 +356,24 @@ public class AsyncClientTest {
         public ServerUnbindResponseWaiter() {
             unbindRespWaiter = new CountDownLatch(1);
             err = new AtomicReference<>();
-            serverSessionHandler.addListener(new DefaultSmppSessionHandler() {
+            server.getEventDispatcher().addHandler(PduRequestReceivedEvent.class, new EventHandler<PduRequestReceivedEvent>() {
                 @Override
-                public PduResponse firePduRequestReceived(PduRequest pduRequest) {
-                    if (pduRequest instanceof SubmitSm) {
-                        scheduled.schedule(() -> {
-                            try {
-                                WindowFuture<Integer, PduRequest, PduResponse> window = serverSessions.iterator().next().sendRequestPdu(new Unbind(), 0, true);
-                                Assert.assertTrue(window.await());
-                            } catch (Throwable t) {
-                                err.set(t);
-                            }
-                            unbindRespWaiter.countDown();
-                        }, 500, TimeUnit.MILLISECONDS);
-                    }
-                    return null;
+                public boolean canHandle(PduRequestReceivedEvent sessionEvent, AsyncSmppSession session) {
+                    return sessionEvent.getPduRequest() instanceof SubmitSm;
+                }
+
+                @Override
+                public void handle(PduRequestReceivedEvent sessionEvent, AsyncSmppSession session) {
+                    scheduled.schedule(() -> {
+                        try {
+                            AwaitingPduSentCallback callback = new AwaitingPduSentCallback(1, 0, 0, 0);
+                            session.unbind(callback);
+                            callback.awaitAll();
+                        } catch (Throwable t) {
+                            err.set(t);
+                        }
+                        unbindRespWaiter.countDown();
+                    }, 500, TimeUnit.MILLISECONDS);
                 }
             });
         }

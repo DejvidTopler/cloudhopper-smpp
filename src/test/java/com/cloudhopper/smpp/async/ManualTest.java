@@ -1,6 +1,5 @@
 package com.cloudhopper.smpp.async;
 
-import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.SmppServerSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppClient;
@@ -72,19 +71,9 @@ public class ManualTest {
         AtomicInteger pduRequestCount = new AtomicInteger();
         AtomicInteger pduResponseCount = new AtomicInteger();
 
-        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, new DefaultEventHandler<BeforePduRequestSentEvent>() {
-            @Override
-            public void handle(BeforePduRequestSentEvent sessionEvent, AsyncSmppSession session) {
-                pduRequestCount.incrementAndGet();
-            }
-        });
+        client.getEventDispatcher().addHandler(BeforePduRequestSentEvent.class, (DefaultEventHandler<BeforePduRequestSentEvent>) (sessionEvent, session) -> pduRequestCount.incrementAndGet());
 
-        client.getEventDispatcher().addHandler(PduResponseReceivedEvent.class, new DefaultEventHandler<PduResponseReceivedEvent>() {
-            @Override
-            public void handle(PduResponseReceivedEvent sessionEvent, AsyncSmppSession session) {
-                pduResponseCount.incrementAndGet();
-            }
-        });
+        client.getEventDispatcher().addHandler(PduResponseReceivedEvent.class, (DefaultEventHandler<PduResponseReceivedEvent>) (sessionEvent, session) -> pduResponseCount.incrementAndGet());
 
 
         Thread.sleep(Long.MAX_VALUE);

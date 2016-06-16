@@ -4,7 +4,7 @@ import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.BindCallback.Reason;
 import com.cloudhopper.smpp.async.client.DefaultAsyncSmppClient;
-import com.cloudhopper.smpp.async.client.DefaultAsyncSmppSession;
+import com.cloudhopper.smpp.async.session.DefaultAsyncClientSmppSession;
 import com.cloudhopper.smpp.pdu.BaseBindResp;
 
 import java.util.concurrent.CountDownLatch;
@@ -19,13 +19,13 @@ import static org.junit.Assert.assertTrue;
  */
 public class AsyncBindClientAwaiter {
     private final CountDownLatch wait = new CountDownLatch(1);
-    private final AtomicReference<DefaultAsyncSmppSession> ref = new AtomicReference<>();
+    private final AtomicReference<DefaultAsyncClientSmppSession> ref = new AtomicReference<>();
     private final AtomicReference<Reason> reasonRef = new AtomicReference<>();
 
     public void bind(DefaultAsyncSmppClient client, SmppSessionConfiguration sessionConfig) {
         client.bind(sessionConfig, new BindCallback() {
             @Override
-            public void onBindSucess(DefaultAsyncSmppSession smppSession) {
+            public void onBindSucess(DefaultAsyncClientSmppSession smppSession) {
                 ref.set(smppSession);
                 wait.countDown();
             }
@@ -38,8 +38,8 @@ public class AsyncBindClientAwaiter {
         });
     }
 
-    public DefaultAsyncSmppSession awaitForSessionBound() throws InterruptedException {
-        assertTrue(wait.await(200, TimeUnit.MILLISECONDS));
+    public DefaultAsyncClientSmppSession awaitForSessionBound() throws InterruptedException {
+        assertTrue(wait.await(2000, TimeUnit.SECONDS));
         return ref.get();
     }
 

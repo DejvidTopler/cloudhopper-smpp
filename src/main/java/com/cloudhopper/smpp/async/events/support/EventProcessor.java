@@ -1,8 +1,10 @@
 package com.cloudhopper.smpp.async.events.support;
 
+import com.cloudhopper.smpp.async.ConcurrentTable;
 import com.cloudhopper.smpp.async.events.SessionEvent;
-import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.async.events.handler.EventHandler;
+import com.cloudhopper.smpp.async.events.support.EventDispatcher.ExecutionOrder;
+import com.cloudhopper.smpp.async.session.AsyncSmppSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,11 +20,11 @@ public class EventProcessor {
 
     private final BlockingQueue<Runnable> queue;
     private final Executor executor;
-    private final ConcurrentMap<Class<? extends SessionEvent>, List<EventHandler>> handlers;
+    private final ConcurrentTable<Class<? extends SessionEvent>, ExecutionOrder, List<EventHandler>> handlers;
 
     public EventProcessor(int threadCount) {
 
-        handlers = new ConcurrentHashMap<>();
+        handlers = new ConcurrentTable<>(10, 10);
 
         if (threadCount > 0) {
             queue = new ArrayBlockingQueue<>(QUEUE_LIMIT);
@@ -43,27 +45,30 @@ public class EventProcessor {
     }
 
     private void execute(SessionEvent sessionEvent, AsyncSmppSession session) {
-        List<EventHandler> eventHandlers = handlers.get(sessionEvent.getClass());
-        if (eventHandlers == null) {
-            return;
-        }
+        for (ExecutionOrder order : ExecutionOrder.values()) {
+            List<EventHandler> eventHandlers = handlers.get(sessionEvent.getClass(), order);
+            if (eventHandlers == null) {
+                continue;
+            }
 
-        for (EventHandler eventHandler : eventHandlers) {
-            try {
-                if (eventHandler.canHandle(sessionEvent, session))
-                    eventHandler.handle(sessionEvent, session);
-            } catch (Throwable e) {
-                LOGGER.error("Executing handler failed, handler=" + eventHandler + ", message=" + e.getMessage(), e);
+            for (EventHandler eventHandler : eventHandlers) {
+                try {
+                    if (eventHandler.canHandle(sessionEvent, session))
+                        eventHandler.handle(sessionEvent, session);
+                } catch (Throwable e) {
+                    LOGGER.error("Executing handler failed, handler=" + eventHandler + ", message=" + e.getMessage(), e);
+                }
             }
         }
     }
 
-    public boolean hasHandlers(Class<? extends SessionEvent> key){
-        return handlers.containsKey(key);
+    public boolean hasHandlers(Class<? extends SessionEvent> key) {
+        return handlers.row(key).size() > 0;
     }
 
-    public void addHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler) {
-        handlers.computeIfAbsent(sessionEvent, aClass -> new CopyOnWriteArrayList<>()).add(eventHandler);
+    public void addHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler,
+            ExecutionOrder executionOrder) {
+        handlers.get(sessionEvent, executionOrder, aClass -> new CopyOnWriteArrayList<>()).add(eventHandler);
     }
 
     public int getQueueSize() {

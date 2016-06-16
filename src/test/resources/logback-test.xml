@@ -29,7 +29,7 @@
     
     <logger name="com.cloudhopper" level="DEBUG"/>
 
-    <root level="WARN">
+    <root level="DEBUG">
         <appender-ref ref="CONSOLE"/>
     </root>
 </configuration>

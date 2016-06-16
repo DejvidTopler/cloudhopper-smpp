@@ -1,7 +1,8 @@
 package com.cloudhopper.smpp.async;
 
-import com.cloudhopper.smpp.AsyncSmppSession;
+import com.cloudhopper.smpp.AsyncClientSmppSession;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
+import com.cloudhopper.smpp.async.session.AsyncSmppSession;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
 

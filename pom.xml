@@ -4,7 +4,7 @@
     <groupId>com.fizzed</groupId>
     <artifactId>ch-smpp</artifactId>
     <packaging>jar</packaging>
-    <version>5.0.10-infobip-1.5</version>
+    <version>5.0.10-infobip-2.0-SNAPSHOT</version>
     <name>ch-smpp</name>
     <description>Efficient, scalable, and flexible Java implementation of the Short Messaging Peer to Peer Protocol (SMPP)</description>
     <url>https://github.com/twitter/cloudhopper-smpp</url>
@@ -30,6 +30,7 @@
         <ch-commons-gsm.version>3.0.0</ch-commons-gsm.version>
         <netty.version>3.9.6.Final</netty.version>
         <slf4j.version>1.7.13</slf4j.version>
+        <guava.version>18.0</guava.version>
         <!-- workaround travis ci maven version requirement -->
         <maven.enforce.version>3.2.5</maven.enforce.version>
         <java-version>1.8</java-version>
@@ -72,6 +73,11 @@
             <artifactId>netty</artifactId>
             <version>${netty.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
         <!-- provided scope -->
         <!-- runtime scope -->
         <!-- testing scope -->
@@ -92,6 +98,18 @@
             <artifactId>logback-classic</artifactId>
             <version>1.1.3</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jayway.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>1.6.3</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>cglib</groupId>
+                    <artifactId>cglib-nodep</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
     

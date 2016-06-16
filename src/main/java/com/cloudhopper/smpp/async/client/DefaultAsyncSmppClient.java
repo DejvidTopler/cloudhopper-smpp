@@ -24,6 +24,8 @@ import com.cloudhopper.smpp.*;
 import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 import com.cloudhopper.smpp.async.events.support.EventDispatcherImpl;
+import com.cloudhopper.smpp.async.session.DefaultAsyncClientSmppSession;
+import com.cloudhopper.smpp.async.session.SessionContextFactory;
 import com.cloudhopper.smpp.channel.*;
 import com.cloudhopper.smpp.impl.DefaultSmppSession;
 import com.cloudhopper.smpp.pdu.BaseBind;
@@ -154,7 +156,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
                 Channel channel = connectFuture.getChannel();
 
                 try {
-                    AsyncSmppSession smppSession = createSession(channel, config, sessionContextFactory);
+                    AsyncClientSmppSession smppSession = createSession(channel, config, sessionContextFactory);
                     BaseBind bindRequest = createBindRequest(config);
                     smppSession.bind(bindRequest, bindCallback);
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
@@ -171,10 +173,10 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         createConnectedChannel(config.getHost(), config.getPort(), config.getConnectTimeout(), callback);
     }
 
-    private AsyncSmppSession createSession(Channel channel, SmppSessionConfiguration config,
+    private AsyncClientSmppSession createSession(Channel channel, SmppSessionConfiguration config,
             SessionContextFactory sessionContextFactory) throws SmppTimeoutException, SmppChannelException, InterruptedException {
-        AsyncSmppSession session = sessionContextFactory == null ?
-                new DefaultAsyncSmppSession(config, channel, eventDispatcher) :
+        AsyncClientSmppSession session = sessionContextFactory == null ?
+                new DefaultAsyncClientSmppSession(config, channel, eventDispatcher) :
                 sessionContextFactory.createSession(SmppSession.Type.CLIENT, config, channel, eventDispatcher);
 
         // add SSL handler
@@ -189,13 +191,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
             } catch (Exception e) {
                 throw new SmppChannelConnectException("Unable to create SSL session]: " + e.getMessage(), e);
             }
-        }
-
-        // add the thread renamer portion to the pipeline
-        if (config.getName() != null) {
-            channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_THREAD_RENAMER_NAME, new SmppSessionThreadRenamer(config.getName()));
-        } else {
-            logger.warn("Session configuration did not have a name set - skipping threadRenamer in pipeline");
         }
 
         // create the logging handler (for bytes sent/received on wire)

@@ -1,6 +1,6 @@
-package com.cloudhopper.smpp.async.client;
+package com.cloudhopper.smpp.async.session;
 
-import com.cloudhopper.smpp.AsyncSmppSession;
+import com.cloudhopper.smpp.AsyncClientSmppSession;
 import com.cloudhopper.smpp.SmppSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
@@ -11,8 +11,8 @@ import org.jboss.netty.channel.Channel;
  */
 public class DefaultSessionContextFactory implements SessionContextFactory {
     @Override
-    public AsyncSmppSession createSession(SmppSession.Type type, SmppSessionConfiguration config, Channel channel,
+    public AsyncClientSmppSession createSession(SmppSession.Type type, SmppSessionConfiguration config, Channel channel,
             EventDispatcher dispatcher) {
-        return new DefaultAsyncSmppSession(config, channel, dispatcher);
+        return new DefaultAsyncClientSmppSession(config, channel, dispatcher);
     }
 }

@@ -1,21 +1,18 @@
-package com.cloudhopper.smpp;
+package com.cloudhopper.smpp.async.session;
 
+import com.cloudhopper.smpp.SmppBindType;
+import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.AsyncRequestContext;
 import com.cloudhopper.smpp.async.AsyncWindow;
-import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 import com.cloudhopper.smpp.impl.SmppSessionChannelListener;
-import com.cloudhopper.smpp.pdu.BaseBind;
 import com.cloudhopper.smpp.pdu.PduResponse;
 import org.jboss.netty.channel.Channel;
 
 /**
- * Created by ib-dtopler on 08.02.16..
+ * Created by ib-dtopler on 6/15/16.
  */
 public interface AsyncSmppSession extends SmppSessionChannelListener {
-
-
-    void bind(BaseBind request, BindCallback bindCallback);
 
     void unbind(PduSentCallback callback);
 
@@ -28,6 +25,8 @@ public interface AsyncSmppSession extends SmppSessionChannelListener {
     void destroy();
 
     SmppBindType getBindType();
+
+    void setBound();
 
     long getBoundTime();
 
@@ -42,6 +41,8 @@ public interface AsyncSmppSession extends SmppSessionChannelListener {
     boolean isUnbinding();
 
     boolean isClosed();
+
+    void setConfiguration(SmppSessionConfiguration configuration);
 
     SmppSessionConfiguration getConfiguration();
 
