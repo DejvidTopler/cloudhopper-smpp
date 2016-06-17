@@ -5,6 +5,7 @@ import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.SmppServerConfiguration;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.events.PduRequestReceivedEvent;
+import com.cloudhopper.smpp.async.events.PduResponseSentEvent;
 import com.cloudhopper.smpp.async.events.handler.EventHandler;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 import com.cloudhopper.smpp.async.session.AsyncSmppSession;
@@ -125,8 +126,22 @@ public class DefaultAsyncSmppServer implements AsyncSmppServer {
         }
     };
 
+    private EventHandler<PduResponseSentEvent> sessionStateBoundHandler = new EventHandler<PduResponseSentEvent>() {
+
+        @Override
+        public boolean canHandle(PduResponseSentEvent sessionEvent, AsyncSmppSession session) {
+            return sessionEvent.getPduResponse() instanceof BaseBindResp && sessionEvent.getPduResponse().getCommandStatus() == 0;
+        }
+
+        @Override
+        public void handle(PduResponseSentEvent sessionEvent, AsyncSmppSession session) {
+            session.setBound();
+        }
+    };
+
     private void registerBindHandlers() {
         eventDispatcher.addHandler(PduRequestReceivedEvent.class, sessionStateHandler, EventDispatcher.ExecutionOrder.BEFORE);
+        eventDispatcher.addHandler(PduResponseSentEvent.class, sessionStateBoundHandler, EventDispatcher.ExecutionOrder.BEFORE);
     }
 
     public PduTranscoder getTranscoder() {
