@@ -1,7 +1,6 @@
 package com.cloudhopper.smpp.async.events.support;
 
 import com.cloudhopper.smpp.async.events.SessionEvent;
-import com.cloudhopper.smpp.AsyncClientSmppSession;
 import com.cloudhopper.smpp.async.events.handler.EventHandler;
 import com.cloudhopper.smpp.async.session.AsyncSmppSession;
 
@@ -36,7 +35,8 @@ public class EventDispatcherImpl implements EventDispatcher {
         addHandler(sessionEvent, eventHandler, ExecutionOrder.NORMAL);
     }
 
-    public void addHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler, ExecutionOrder executionOrder) {
+    public void addHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler,
+            ExecutionOrder executionOrder) {
         syncProcessor.addHandler(sessionEvent, eventHandler, executionOrder);
     }
 
@@ -44,7 +44,9 @@ public class EventDispatcherImpl implements EventDispatcher {
     public void addAsyncHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler) {
         addAsyncHandler(sessionEvent, eventHandler, ExecutionOrder.NORMAL);
     }
-    public void addAsyncHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler, ExecutionOrder executionOrder) {
+
+    public void addAsyncHandler(Class<? extends SessionEvent> sessionEvent, EventHandler eventHandler,
+            ExecutionOrder executionOrder) {
         asyncProcessor.addHandler(sessionEvent, eventHandler, executionOrder);
     }
 }

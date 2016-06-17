@@ -41,7 +41,7 @@ public class AsyncClientTestUtils {
     }
 
     public static DefaultAsyncSmppClient createSmppClient() {
-        DefaultAsyncSmppClient client = new DefaultAsyncSmppClient(Executors.newFixedThreadPool(4), Executors.newFixedThreadPool(1), 4);
+        DefaultAsyncSmppClient client = new DefaultAsyncSmppClient(Executors.newFixedThreadPool(4), 4, Executors.newFixedThreadPool(1));
         registerLoggingHandler(client.getEventDispatcher());
         return client;
     }
@@ -81,7 +81,7 @@ public class AsyncClientTestUtils {
         SmppServerConfiguration configuration = createSmppServerConfiguration();
         int threadCount = 4;
         DefaultAsyncSmppServer smppServer = new DefaultAsyncSmppServer(configuration, Executors.newFixedThreadPool(1),
-                Executors.newFixedThreadPool(threadCount), new EventDispatcherImpl(), (sessionEvent, session) -> true, threadCount);
+                threadCount, Executors.newFixedThreadPool(threadCount), new EventDispatcherImpl());
 
         registerLoggingHandler(smppServer.getEventDispatcher());
         return smppServer;

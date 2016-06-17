@@ -28,12 +28,15 @@ import com.cloudhopper.smpp.channel.SmppSessionPduDecoder;
 import com.cloudhopper.smpp.channel.SmppSessionWrapper;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.group.ChannelGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @ChannelPipelineCoverage("all")
 public class SmppServerConnector extends SimpleChannelUpstreamHandler {
     private final ChannelGroup channels;
     private final DefaultAsyncSmppServer server;
     private final EventDispatcher eventDispatcher;
+    public static final Logger LOGGER = LoggerFactory.getLogger(SmppServerConnector.class);
 
     public SmppServerConnector(ChannelGroup channels, DefaultAsyncSmppServer server, EventDispatcher eventDispatcher) {
         this.channels = channels;
@@ -52,6 +55,8 @@ public class SmppServerConnector extends SimpleChannelUpstreamHandler {
         DefaultAsyncServerSmppSession session = new DefaultAsyncServerSmppSession(null, channel, eventDispatcher);
         this.server.getSessions().put(channel, session);
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, new SmppSessionWrapper(session));
+
+        LOGGER.info("Channel connected " + channel);
     }
 
     @Override
@@ -60,6 +65,8 @@ public class SmppServerConnector extends SimpleChannelUpstreamHandler {
         channels.remove(e.getChannel());
         this.server.getSessions().remove(e.getChannel());
         this.server.getCounters().incrementChannelDisconnectsAndGet();
+
+        LOGGER.info("Channel disconnected " + e.getChannel());
     }
 
 }

@@ -51,51 +51,31 @@ public class DefaultAsyncSmppServer implements AsyncSmppServer {
     private ChannelFactory channelFactory;
     private ServerBootstrap serverBootstrap;
     private Channel serverChannel;
-    private final org.jboss.netty.util.Timer writeTimeoutTimer;
-    private final Timer bindTimer;
     private DefaultSmppServerCounters counters;
-    private final AsyncSmppServerAuthentication authentication;
 
     public DefaultAsyncSmppServer(final SmppServerConfiguration configuration, ExecutorService selectorExecutor,
-            ExecutorService workerExecutor, EventDispatcher eventDispatcher,
-            AsyncSmppServerAuthentication authentication, int workerExecutorSize) {
+            int workerExecutorSize, ExecutorService workerExecutor, EventDispatcher eventDispatcher) {
+        this(configuration, selectorExecutor, eventDispatcher, new NioWorkerPool(workerExecutor, workerExecutorSize, (currentThreadName, proposedThreadName) -> "SmppServerWorkerThread"));
+    }
+
+    public DefaultAsyncSmppServer(SmppServerConfiguration configuration, ExecutorService selectorExecutor,
+            EventDispatcher eventDispatcher, NioWorkerPool workerPool) {
         this.configuration = configuration;
         this.eventDispatcher = eventDispatcher;
         this.channels = new DefaultChannelGroup();
         this.channelFactory = new NioServerSocketChannelFactory(
                 new NioServerBossPool(selectorExecutor, 1, (currentThreadName, proposedThreadName) -> "SmppServerSelectorThread"),
-                new NioWorkerPool(workerExecutor, workerExecutorSize, (currentThreadName, proposedThreadName) -> "SmppServerWorkerThread"));
+                workerPool);
 
         this.serverBootstrap = new ServerBootstrap(this.channelFactory);
         this.serverBootstrap.setOption("reuseAddress", configuration.isReuseAddress());
         this.serverConnector = new SmppServerConnector(channels, this, eventDispatcher);
         this.serverBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, this.serverConnector);
-        this.writeTimeoutTimer = new org.jboss.netty.util.HashedWheelTimer();
-        this.bindTimer = new Timer(configuration.getName() + "-BindTimer0", true);
         this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
         this.counters = new DefaultSmppServerCounters();
-        this.authentication = authentication;
 
         registerBindHandlers();
     }
-
-    private EventHandler<PduRequestReceivedEvent> bindEventHandler = new EventHandler<PduRequestReceivedEvent>() {
-        @Override
-        public boolean canHandle(PduRequestReceivedEvent sessionEvent, AsyncSmppSession session) {
-            return sessionEvent.getPduRequest() instanceof BaseBind;
-        }
-
-        @Override
-        public void handle(PduRequestReceivedEvent sessionEvent, AsyncSmppSession session) {
-            if (authentication.isValidConnection(sessionEvent, session)) {
-                session.setBound();
-                session.setConfiguration(createConfiguration((BaseBind) sessionEvent.getPduRequest(), session.getChannel()));
-                return;
-            }
-
-            sessionEvent.getPduResponse().setCommandStatus(SmppConstants.STATUS_BINDFAIL);
-        }
-    };
 
     private SmppSessionConfiguration createConfiguration(BaseBind bindRequest, Channel channel) {
         SmppSessionConfiguration sessionConfiguration = new SmppSessionConfiguration();
@@ -147,7 +127,6 @@ public class DefaultAsyncSmppServer implements AsyncSmppServer {
 
     private void registerBindHandlers() {
         eventDispatcher.addHandler(PduRequestReceivedEvent.class, sessionStateHandler, EventDispatcher.ExecutionOrder.BEFORE);
-        eventDispatcher.addHandler(PduRequestReceivedEvent.class, bindEventHandler, EventDispatcher.ExecutionOrder.AFTER);
     }
 
     public PduTranscoder getTranscoder() {
@@ -229,11 +208,9 @@ public class DefaultAsyncSmppServer implements AsyncSmppServer {
 
     @Override
     public void destroy() {
-        this.bindTimer.cancel();
         stop();
         this.serverBootstrap.releaseExternalResources();
         this.serverBootstrap = null;
-        this.writeTimeoutTimer.stop();
         logger.info("{} destroyed on SMPP port [{}]", configuration.getName(), configuration.getPort());
     }
 

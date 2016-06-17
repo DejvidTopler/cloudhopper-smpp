@@ -70,23 +70,23 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private final EventDispatcher eventDispatcher;
     private final ChannelGroup channels;
     private final SmppClientConnector clientConnector;
-    private final ExecutorService selectorExecutors;
-    private final ExecutorService executors;
     private final ClientSocketChannelFactory channelFactory;
     private final ClientBootstrap clientBootstrap;
     private final DefaultPduTranscoder transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 
     /**
-     * @param executors        used for worker pool
-     * @param expectedSessions is maxPoolSize for executors
+     * @param workerExecutor        used for worker pool
+     * @param workerCount is maxPoolSize for workerExecutor
      */
-    public DefaultAsyncSmppClient(ExecutorService executors, ExecutorService selectorExecutors, int expectedSessions) {
+    public DefaultAsyncSmppClient(ExecutorService workerExecutor, int workerCount, ExecutorService selectorExecutor) {
+        this(selectorExecutor, new NioWorkerPool(workerExecutor, workerCount, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
+    }
+
+    public DefaultAsyncSmppClient(ExecutorService selectorExecutor, NioWorkerPool workerPool) {
         this.channels = new DefaultChannelGroup();
-        this.executors = executors;
-        this.selectorExecutors = selectorExecutors;
         this.channelFactory = new NioClientSocketChannelFactory(
-                new NioClientBossPool(this.selectorExecutors, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
-                new NioWorkerPool(this.executors, expectedSessions, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
+                new NioClientBossPool(selectorExecutor, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
+                workerPool);
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         this.clientConnector = new SmppClientConnector(this.channels);
         this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnector);
