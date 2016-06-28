@@ -1,5 +1,6 @@
 package com.cloudhopper.smpp.async;
 
+import com.cloudhopper.smpp.AsyncSmppSession;
 import com.cloudhopper.smpp.SmppSessionConfiguration;
 import com.cloudhopper.smpp.async.callback.BindCallback;
 import com.cloudhopper.smpp.async.callback.BindCallback.Reason;
@@ -24,6 +25,10 @@ public class AsyncBindClientAwaiter {
 
     public void bind(DefaultAsyncSmppClient client, SmppSessionConfiguration sessionConfig) {
         client.bind(sessionConfig, new BindCallback() {
+            @Override
+            public void onSessionCreate(AsyncSmppSession smppSession) {
+            }
+
             @Override
             public void onBindSucess(DefaultAsyncSmppSession smppSession) {
                 ref.set(smppSession);

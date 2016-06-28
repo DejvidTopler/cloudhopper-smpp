@@ -177,6 +177,10 @@ public class AsyncClientTest {
 
         smppSession.bind(new BindReceiver(), new BindCallback() {
             @Override
+            public void onSessionCreate(AsyncSmppSession smppSession) {
+            }
+
+            @Override
             public void onBindSucess(DefaultAsyncSmppSession smppSession) {
             }
 

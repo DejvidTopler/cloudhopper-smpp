@@ -155,6 +155,8 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
 
                 try {
                     AsyncSmppSession smppSession = createSession(channel, config, sessionContextFactory);
+                    bindCallback.onSessionCreate(smppSession);
+
                     BaseBind bindRequest = createBindRequest(config);
                     smppSession.bind(bindRequest, bindCallback);
                 } catch (SmppTimeoutException | SmppChannelException | InterruptedException t) {
