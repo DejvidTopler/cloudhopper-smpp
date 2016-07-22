@@ -4,7 +4,9 @@ import com.cloudhopper.commons.util.windowing.DuplicateKeyException;
 import com.cloudhopper.smpp.async.callback.PduSentCallback;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -14,6 +16,10 @@ import java.util.concurrent.ConcurrentMap;
 public class AsyncWindow {
 
     private final ConcurrentMap<Integer, AsyncRequestContext> container = new ConcurrentHashMap<>();
+
+    public Map<Integer, AsyncRequestContext> getContainer() {
+        return Collections.unmodifiableMap(container);
+    }
 
     public void insert(AsyncRequestContext ctx) throws DuplicateKeyException {
         int key = ctx.getRequest().getSequenceNumber();
