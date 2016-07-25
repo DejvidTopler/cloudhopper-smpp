@@ -56,6 +56,7 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLEngine;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Default implementation to "bootstrap" client SMPP sessions (create & bind).
@@ -84,11 +85,16 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         this.selectorExecutors = selectorExecutors;
         this.channelFactory = new NioClientSocketChannelFactory(
                 new NioClientBossPool(this.selectorExecutors, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
-                new NioWorkerPool(this.executors, expectedSessions, (currentThreadName, proposedThreadName) -> "SmppClientWorkerThread"));
+                createWorkerPool(expectedSessions));
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         this.clientConnector = new SmppClientConnector(this.channels);
         this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnector);
         this.eventDispatcher = new EventDispatcherImpl();
+    }
+
+    private NioWorkerPool createWorkerPool(int expectedSessions) {
+        AtomicInteger count = new AtomicInteger();
+        return new NioWorkerPool(this.executors, expectedSessions, (currThrName, proposedThrName) -> "SmppClientWorkerThread-" + count.incrementAndGet());
     }
 
     @Override
