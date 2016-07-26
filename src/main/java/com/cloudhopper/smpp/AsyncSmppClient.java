@@ -1,6 +1,7 @@
 package com.cloudhopper.smpp;
 
 import com.cloudhopper.smpp.async.callback.BindCallback;
+import com.cloudhopper.smpp.async.client.NioWorkerPoolExt;
 import com.cloudhopper.smpp.async.client.SessionContextFactory;
 import com.cloudhopper.smpp.async.events.support.EventDispatcher;
 
@@ -16,6 +17,8 @@ public interface AsyncSmppClient {
     EventDispatcher getEventDispatcher();
 
     int getConnectionSize();
+
+    NioWorkerPoolExt getWorkerPool();
 
     void destroy();
 

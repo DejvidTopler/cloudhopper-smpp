@@ -47,7 +47,7 @@ import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioClientBossPool;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioWorkerPool;
+import org.jboss.netty.channel.socket.nio.NioWorker;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
@@ -66,6 +66,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private static final Logger logger = LoggerFactory.getLogger(DefaultAsyncSmppClient.class);
 
+    public static final ThreadLocal<NioWorker> CURR_THREAD_WORKER = new ThreadLocal<>();
+
     private final EventDispatcher eventDispatcher;
     private final ChannelGroup channels;
     private final SmppClientConnector clientConnector;
@@ -74,6 +76,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     private final ClientSocketChannelFactory channelFactory;
     private final ClientBootstrap clientBootstrap;
     private final DefaultPduTranscoder transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
+    private final NioWorkerPoolExt workerPool;
 
     /**
      * @param executors        used for worker pool
@@ -83,18 +86,19 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
         this.channels = new DefaultChannelGroup();
         this.executors = executors;
         this.selectorExecutors = selectorExecutors;
+        workerPool = createWorkerPool(expectedSessions);
         this.channelFactory = new NioClientSocketChannelFactory(
                 new NioClientBossPool(this.selectorExecutors, 1, new HashedWheelTimer(), (currentThreadName, proposedThreadName) -> "SmppClientSelectorThread"),
-                createWorkerPool(expectedSessions));
+                workerPool);
         this.clientBootstrap = new ClientBootstrap(channelFactory);
         this.clientConnector = new SmppClientConnector(this.channels);
         this.clientBootstrap.getPipeline().addLast(SmppChannelConstants.PIPELINE_CLIENT_CONNECTOR_NAME, this.clientConnector);
         this.eventDispatcher = new EventDispatcherImpl();
     }
 
-    private NioWorkerPool createWorkerPool(int expectedSessions) {
+    private NioWorkerPoolExt createWorkerPool(int expectedSessions) {
         AtomicInteger count = new AtomicInteger();
-        return new NioWorkerPool(this.executors, expectedSessions, (currThrName, proposedThrName) -> "SmppClientWorkerThread-" + count.incrementAndGet());
+        return new NioWorkerPoolExt(this.executors, expectedSessions, (currThrName, proposedThrName) -> "SmppClientWorkerThread-" + count.incrementAndGet());
     }
 
     @Override
@@ -105,6 +109,11 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     @Override
     public int getConnectionSize() {
         return this.channels.size();
+    }
+
+    @Override
+    public NioWorkerPoolExt getWorkerPool() {
+        return workerPool;
     }
 
     @Override
@@ -141,11 +150,24 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
 
     @Override
     public void bind(SmppSessionConfiguration config, BindCallback bindCallback,
-            SessionContextFactory sessionContextFactory) {
+                     SessionContextFactory sessionContextFactory) {
         if (bindCallback == null) {
             throw new NullPointerException("AsyncBindCallback can not be null.");
         }
 
+        if (config.getNioWorker() == null) {
+            bindInternal(config, bindCallback, sessionContextFactory);
+        } else {
+            config.getNioWorker().executeInIoThread(() -> {
+                CURR_THREAD_WORKER.set(config.getNioWorker());
+                bindInternal(config, bindCallback, sessionContextFactory);
+            });
+        }
+
+    }
+
+    private void bindInternal(SmppSessionConfiguration config, BindCallback bindCallback,
+                              SessionContextFactory sessionContextFactory) {
         ChannelFutureListener callback = connectFuture -> {
             if (connectFuture.isCancelled()) {
                 bindCallback.onFailure(BindCallback.Reason.CONNECT_CANCELED, null, null);
@@ -180,7 +202,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     }
 
     private AsyncSmppSession createSession(Channel channel, SmppSessionConfiguration config,
-            SessionContextFactory sessionContextFactory) throws SmppTimeoutException, SmppChannelException, InterruptedException {
+                                           SessionContextFactory sessionContextFactory) throws SmppTimeoutException, SmppChannelException, InterruptedException {
         AsyncSmppSession session = sessionContextFactory == null ?
                 new DefaultAsyncSmppSession(config, channel, eventDispatcher) :
                 sessionContextFactory.createSession(SmppSession.Type.CLIENT, config, channel, eventDispatcher);
@@ -199,13 +221,6 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
             }
         }
 
-        // add the thread renamer portion to the pipeline
-        if (config.getName() != null) {
-            channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_THREAD_RENAMER_NAME, new SmppSessionThreadRenamer(config.getName()));
-        } else {
-            logger.warn("Session configuration did not have a name set - skipping threadRenamer in pipeline");
-        }
-
         // create the logging handler (for bytes sent/received on wire)
         SmppSessionLogger loggingHandler = new SmppSessionLogger(DefaultSmppSession.class.getCanonicalName(), config.getLoggingOptions());
         channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_LOGGER_NAME, loggingHandler);
@@ -220,7 +235,7 @@ public class DefaultAsyncSmppClient implements AsyncSmppClient {
     }
 
     private void createConnectedChannel(String host, int port, long connectTimeoutMillis,
-            ChannelFutureListener channelFutureListener) {
+                                        ChannelFutureListener channelFutureListener) {
         // a socket address used to "bind" to the remote system
         InetSocketAddress socketAddr = new InetSocketAddress(host, port);
         // set the timeout
