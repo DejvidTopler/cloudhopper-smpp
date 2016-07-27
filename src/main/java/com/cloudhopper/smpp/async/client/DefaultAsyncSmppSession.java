@@ -381,10 +381,11 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
                     eventDispatcher.dispatch(new PduRequestSentEvent(ctx), this);
                 }
             } else {
-                window.complete(ctx.getRequest().getSequenceNumber());
-                PduSentCallback callback = ctx.getCallback();
-                if (callback != null)
-                    callback.onFailure(f.getCause());
+                if(window.complete(ctx.getRequest().getSequenceNumber()) != null) {
+                    PduSentCallback callback = ctx.getCallback();
+                    if (callback != null)
+                        callback.onFailure(f.getCause());
+                }
             }
         });
     }

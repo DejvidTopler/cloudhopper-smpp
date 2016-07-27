@@ -28,11 +28,9 @@ public class NioWorkerPoolExt extends NioWorkerPool {
             for (int i = 0; i < nioWorkers.length; i++) {
                 initializedWorkers[i] = (NioWorker) nioWorkers[i];
             }
-
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Error creating reference to workers.");
         }
-
     }
 
     private Field getField(Class clazz, String fieldName) {
@@ -55,5 +53,9 @@ public class NioWorkerPoolExt extends NioWorkerPool {
 
     public NioWorker getWorkerByGatewayId(int gatewayId) {
         return initializedWorkers[gatewayId % initializedWorkers.length];
+    }
+
+    public NioWorker[] getWorkers() {
+        return initializedWorkers;
     }
 }
