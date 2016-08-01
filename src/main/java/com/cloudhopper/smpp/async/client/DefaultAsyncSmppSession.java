@@ -208,7 +208,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             }
 
             @Override
-            public void onFailure(Throwable t) {
+            public void onFailure(Throwable t, String message) {
                 DefaultAsyncSmppSession.this.close(future -> {
                     if (t instanceof RecoverablePduException || t instanceof UnrecoverablePduException || t instanceof SmppTimeoutException ||
                             t instanceof SmppChannelException || t instanceof InterruptedException)
@@ -274,8 +274,8 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
             }
 
             @Override
-            public void onFailure(Throwable t) {
-                close(future -> callback.onFailure(t));
+            public void onFailure(Throwable t, String message) {
+                close(future -> callback.onFailure(t, null));
             }
 
             @Override
@@ -327,7 +327,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
         } catch (Throwable e) {
             PduSentCallback callback = ctx.getCallback();
             if (callback != null)
-                callback.onFailure(e);
+                callback.onFailure(e, null);
         }
     }
 
@@ -384,7 +384,7 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
                 if(window.complete(ctx.getRequest().getSequenceNumber()) != null) {
                     PduSentCallback callback = ctx.getCallback();
                     if (callback != null)
-                        callback.onFailure(f.getCause());
+                        callback.onFailure(f.getCause(), null);
                 }
             }
         });
@@ -471,9 +471,13 @@ public class DefaultAsyncSmppSession implements AsyncSmppSession {
                     eventDispatcher.dispatch(new PduResponseReceivedEvent(ctx, pduResponse), this);
 
                 PduSentCallback callback = ctx.getCallback();
-                if(callback != null)
-                    callback.onSuccess(pduResponse);
-
+                if (callback != null) {
+                    if (pduResponse instanceof GenericNack) {
+                        callback.onFailure(null, "Received genNack=" + pduResponse.toString());
+                    } else {
+                        callback.onSuccess(pduResponse);
+                    }
+                }
             } else {
                 if (eventDispatcher.hasHandlers(UnexpectedPduResponseReceivedEvent.class))
                     eventDispatcher.dispatch(new UnexpectedPduResponseReceivedEvent(pduResponse), this);

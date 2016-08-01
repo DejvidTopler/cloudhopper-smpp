@@ -13,7 +13,7 @@ public interface PduSentCallback<P extends PduResponse> {
 
     void onSuccess(P response);
 
-    void onFailure(Throwable t);
+    void onFailure(Throwable t, String message);
 
     void onExpire();
 

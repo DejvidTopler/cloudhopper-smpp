@@ -20,8 +20,8 @@ public class DelegatingPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onFailure(Throwable t) {
-        delegate.onFailure(t);
+    public void onFailure(Throwable t, String message) {
+        delegate.onFailure(t, null);
     }
 
     @Override

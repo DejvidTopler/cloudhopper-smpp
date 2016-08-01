@@ -12,7 +12,7 @@ public class EmptyPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onFailure(Throwable t) {
+    public void onFailure(Throwable t, String message) {
     }
 
     @Override

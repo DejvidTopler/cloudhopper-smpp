@@ -17,7 +17,7 @@ public class DefaultPduSentCallback implements PduSentCallback {
     }
 
     @Override
-    public void onFailure(Throwable t) {
+    public void onFailure(Throwable t, String message) {
         LOGGER.info("Failure while sending pdu, message: " + t, t);
     }
 

@@ -43,8 +43,8 @@ public class AwaitingPduSentCallback extends DefaultPduSentCallback {
     }
 
     @Override
-    public void onFailure(Throwable t) {
-        super.onFailure(t);
+    public void onFailure(Throwable t, String message) {
+        super.onFailure(t, message);
         failureWait.countDown();
         this.exception.set(t);
     }
