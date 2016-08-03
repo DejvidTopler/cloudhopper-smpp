@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
+import java.util.Queue;
 import java.util.concurrent.Executor;
 
 /**
@@ -16,17 +17,23 @@ public class NioWorkerPoolExt extends NioWorkerPool {
     public static final Logger LOGGER = LoggerFactory.getLogger(NioWorkerPoolExt.class);
 
     private final NioWorker[] initializedWorkers;
+    private final Queue<Runnable>[] initializedQueues;
 
     public NioWorkerPoolExt(Executor workerExecutor, int workerCount, ThreadNameDeterminer determiner) {
         super(workerExecutor, workerCount, determiner);
 
         initializedWorkers = new NioWorker[workerCount];
+        initializedQueues = new Queue[workerCount];
         try {
             Field field = getField(getClass(), "workers");
             field.setAccessible(true);
             Object[] nioWorkers = (Object[]) field.get(this);
             for (int i = 0; i < nioWorkers.length; i++) {
                 initializedWorkers[i] = (NioWorker) nioWorkers[i];
+
+                Field taskQueueField = getField(initializedWorkers[i].getClass(), "taskQueue");
+                taskQueueField.setAccessible(true);
+                initializedQueues[i] = (Queue<Runnable>) taskQueueField.get(initializedWorkers[i]);
             }
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Error creating reference to workers.");
@@ -57,5 +64,12 @@ public class NioWorkerPoolExt extends NioWorkerPool {
 
     public NioWorker[] getWorkers() {
         return initializedWorkers;
+    }
+
+    public int getSize() {
+        int size = 0;
+        for (Queue<Runnable> q : initializedQueues)
+            size += q.size();
+        return size;
     }
 }
