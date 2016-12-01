@@ -28,6 +28,8 @@ import com.cloudhopper.smpp.type.TerminatingNullByteNotFoundException;
 import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.cloudhopper.smpp.tlv.Tlv;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
+
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,7 @@ import org.slf4j.LoggerFactory;
  */
 public class ChannelBufferUtil {
     private static final Logger logger = LoggerFactory.getLogger(ChannelBufferUtil.class);
+    public static final Charset ISO_CHARSET = Charset.forName("ISO-8859-1");
 
     /**
      * Read and create a new Address from a buffer.  Checks if there is
@@ -122,14 +125,9 @@ public class ChannelBufferUtil {
      * @param value
      * @throws UnsupportedEncodingException
      */
-    static public void writeNullTerminatedString(ChannelBuffer buffer, String value) throws UnrecoverablePduException {
+    static public void writeNullTerminatedString(ChannelBuffer buffer, String value) {
         if (value != null) {
-            try {
-                byte[] bytes = value.getBytes("ISO-8859-1");
-                buffer.writeBytes(bytes);
-            } catch (UnsupportedEncodingException e) {
-                throw new UnrecoverablePduException(e.getMessage(), e);
-            }
+            buffer.writeBytes(value.getBytes(ISO_CHARSET));
         }
         // always write null byte
         buffer.writeByte((byte)0x00);
@@ -169,16 +167,12 @@ public class ChannelBufferUtil {
         }
 
         // at this point, we found a terminating zero
-        String result = null;
+        String result;
         if (zeroPos > 0) {
             // read a new byte array
             byte[] bytes = new byte[zeroPos];
             buffer.readBytes(bytes);
-            try {
-                result = new String(bytes, "ISO-8859-1");
-            } catch (UnsupportedEncodingException e) {
-                logger.error("Impossible error", e);
-            }
+            result = new String(bytes, ISO_CHARSET);
         } else {
             result = "";
         }
