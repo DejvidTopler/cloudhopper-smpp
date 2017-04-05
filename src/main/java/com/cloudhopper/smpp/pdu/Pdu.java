@@ -20,15 +20,17 @@ package com.cloudhopper.smpp.pdu;
  * #L%
  */
 
-import com.cloudhopper.smpp.type.UnrecoverablePduException;
-import com.cloudhopper.smpp.type.RecoverablePduException;
 import com.cloudhopper.commons.util.HexUtil;
 import com.cloudhopper.smpp.SmppConstants;
 import com.cloudhopper.smpp.tlv.Tlv;
+import com.cloudhopper.smpp.tlv.TlvConvertException;
 import com.cloudhopper.smpp.transcoder.PduTranscoderContext;
+import com.cloudhopper.smpp.type.RecoverablePduException;
+import com.cloudhopper.smpp.type.UnrecoverablePduException;
 import com.cloudhopper.smpp.util.ChannelBufferUtil;
-import java.util.ArrayList;
 import org.jboss.netty.buffer.ChannelBuffer;
+
+import java.util.ArrayList;
 
 public abstract class Pdu {
     
@@ -313,7 +315,7 @@ public abstract class Pdu {
     @Override
     public String toString() {
         // our guess of the optimal "toString" buffer size
-        StringBuilder buffer = new StringBuilder(65 + 300 + (getOptionalParameterCount()*20));
+        StringBuilder buffer = new StringBuilder(65 + 300 + (getOptionalParameterCount() * 20));
 
         // append PDU header
         buffer.append("(");
@@ -329,7 +331,7 @@ public abstract class Pdu {
 
         // for "responses", attempt to lookup the command status message
         if (this instanceof PduResponse) {
-            PduResponse response = (PduResponse)this;
+            PduResponse response = (PduResponse) this;
             String statusMessage = response.getResultMessage();
             if (statusMessage != null) {
                 buffer.append(" result: \"");
@@ -345,10 +347,20 @@ public abstract class Pdu {
         // append PDU body
         buffer.append(" (body: ");
         this.appendBodyToString(buffer);
-        
+
         // append PDU optional parameters
         buffer.append(") (opts: ");
         this.appendOptionalParameterToString(buffer);
+
+        //org.smpp.pdu.IBExtension#EXOPT_INFOBIP_DESC_ID - SMPP proxy description TLV
+        Tlv tlv = getOptionalParameter((short) 0x1462);
+        if (tlv != null) {
+            try {
+                buffer.append(" desc:'").append(tlv.getValueAsString()).append("' ");
+            } catch (TlvConvertException ignore) {
+            }
+        }
+
         buffer.append(")");
 
         return buffer.toString();
