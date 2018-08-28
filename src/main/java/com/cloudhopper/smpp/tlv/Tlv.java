@@ -22,7 +22,8 @@ package com.cloudhopper.smpp.tlv;
 
 import com.cloudhopper.commons.util.ByteArrayUtil;
 import com.cloudhopper.commons.util.HexUtil;
-import java.io.UnsupportedEncodingException;
+
+import java.nio.charset.Charset;
 import java.util.Arrays;
 
 /**
@@ -31,7 +32,9 @@ import java.util.Arrays;
  * @author joelauer (twitter: @jjlauer or <a href="http://twitter.com/jjlauer" target=window>http://twitter.com/jjlauer</a>)
  */
 public class Tlv {
-    
+
+    public static final Charset LATIN_1 = Charset.forName("ISO-8859-1");
+
     private final short tag;
     private final byte[] value;     // length is stored in array
     private String tagName;      // short description of this tag
@@ -95,10 +98,19 @@ public class Tlv {
     }
 
     public String getValueAsString() throws TlvConvertException {
-        return getValueAsString("ISO-8859-1");
+        return getValueAsString(LATIN_1);
     }
 
     public String getValueAsString(String charsetName) throws TlvConvertException {
+        try {
+            Charset charset = Charset.forName(charsetName);
+            return getValueAsString(charset);
+        } catch (Exception e) {
+            throw new TlvConvertException("String", "unsupported charset " + e.getMessage());
+        }
+    }
+
+    private String getValueAsString(Charset charset) {
         if (this.value == null) {
             return null;
         }
@@ -114,11 +126,7 @@ public class Tlv {
             }
         }
 
-        try {
-            return new String(this.value, 0, len, charsetName);
-        } catch (UnsupportedEncodingException e) {
-            throw new TlvConvertException("String", "unsupported charset " + e.getMessage());
-        }
+        return new String(this.value, 0, len, charset);
     }
 
     @Override
